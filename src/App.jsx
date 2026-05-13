@@ -12,6 +12,7 @@ import NodeErrorBoundary from './components/NodeErrorBoundary';
 import { useLineageState } from './hooks/useLineageState';
 import { useLineagePersistence } from './hooks/useLineagePersistence';
 import { useContextMenu } from './hooks/useContextMenu';
+import { useAutoLayout } from './hooks/useAutoLayout';
 
 function isValidConnection({ sourceHandle, targetHandle }) {
   if (sourceHandle?.endsWith('-source') && targetHandle?.endsWith('-target')) return true;
@@ -42,6 +43,8 @@ export default function App() {
     onConnect, onKeyDown, undo, redo,
     addNode, addFunctionNode, deleteNode, createMerge, restoreState,
   } = useLineageState();
+
+  const { applyLayout } = useAutoLayout();
 
   // ── Toast ──────────────────────────────────────────────────────────────
 
@@ -102,6 +105,12 @@ export default function App() {
     closeMenu();
   }, [createMerge, selectedDFs, closeMenu]);
 
+  const handleAutoLayout = useCallback(() => {
+    const laid = applyLayout(nodes, edges);
+    restoreState(laid, edges);
+    setTimeout(() => reactFlowInstance.current?.fitView({ padding: 0.12 }), 50);
+  }, [nodes, edges, applyLayout, restoreState]);
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
@@ -145,6 +154,7 @@ export default function App() {
           onMergeSelected={handleMergeSelected}
           onUndo={undo}
           onRedo={redo}
+          onAutoLayout={handleAutoLayout}
         />
 
         <ContextMenu

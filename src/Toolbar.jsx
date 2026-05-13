@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Toolbar({ onAddNode, onAddFunction, onSave, onLoad, onExportPng, selectedDFCount, onMergeSelected, onUndo, onRedo }) {
+export default function Toolbar({ onAddNode, onAddFunction, onSave, onLoad, onExportPng, selectedDFCount, onMergeSelected, onUndo, onRedo, onAutoLayout }) {
   const canMerge = selectedDFCount === 2;
 
   return (
@@ -49,6 +49,16 @@ export default function Toolbar({ onAddNode, onAddFunction, onSave, onLoad, onEx
         className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
       >
         ↪
+      </button>
+
+      <div className="w-px bg-slate-600 self-stretch" />
+
+      <button
+        onClick={onAutoLayout}
+        title="Auto-arrange nodes"
+        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
+      >
+        ⬦ Auto-arrange
       </button>
 
       <div className="w-px bg-slate-600 self-stretch" />

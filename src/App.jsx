@@ -20,7 +20,7 @@ import Toolbar from './Toolbar';
 
 const STORAGE_KEY = 'lineage-editor-state';
 
-let idCounter = 100;
+let idCounter = Date.now();
 const uid = () => `${++idCounter}`;
 
 function makeAttr(name) {

@@ -28,14 +28,14 @@ Start with: `PORT=3001 npm start` from `lineage-editor/`.
 
 ### Git history (latest first)
 ```
-(registry refactor)  Restructure: node registry pattern — each type self-contained in nodes/<type>/
+8118272  Add copy/paste nodes (Ctrl+C / Ctrl+D)
+0a56e88  Restructure node registry + add Filter, GroupBy, Comment nodes
+533b86f  Update handoff.md: document undo/redo, column types, auto-layout, search
+158eece  Add Cmd+K search modal
+23e1947  Add dagre auto-layout (⬦ Auto-arrange button)
+15bc8fc  Add column data types with colored badges
+a3994ba  Add undo/redo history stack (Ctrl+Z / Ctrl+Y)
 0a2cf8a  Add test suite: 22 tests across App, EditableText, ContextMenu, useLineagePersistence
-0332269  Add NodeErrorBoundary to isolate node render crashes
-283ac66  Refactor: extract ContextMenu component and useContextMenu hook
-999a438  Refactor: extract shared components, constants, and custom hooks
-9c10dbb  Fix node ID collisions across sessions by seeding idCounter from Date.now()
-f0c0dc8  Fix keyPairs not iterable crash when MergeNode data lacks keyPairs field
-7e9bece  Redesign MergeNode: two-panel layout with dropdown key selectors and auto output columns
 ```
 
 ---
@@ -55,10 +55,22 @@ src/
 │   │   ├── index.jsx             ← MergeNode component
 │   │   ├── config.js
 │   │   └── callbacks.js          ← useMergeCallbacks(setNodes, pushHistory)
-│   └── function/
-│       ├── index.jsx             ← FunctionNode component
-│       ├── config.js
-│       └── callbacks.js          ← useFunctionCallbacks(setNodes, setEdges, pushHistory)
+│   ├── function/
+│   │   ├── index.jsx             ← FunctionNode component
+│   │   ├── config.js
+│   │   └── callbacks.js          ← useFunctionCallbacks(setNodes, setEdges, pushHistory)
+│   ├── filter/
+│   │   ├── index.jsx             ← FilterNode component
+│   │   ├── config.js             ← amber/orange colors; connections: df-out↔filter-in, filter-out↔df-in
+│   │   └── callbacks.js          ← useFilterCallbacks(setNodes, pushHistory)
+│   ├── groupby/
+│   │   ├── index.jsx             ← GroupByNode component
+│   │   ├── config.js             ← sky/cyan colors; connections: [] (column-level handles only)
+│   │   └── callbacks.js          ← useGroupByCallbacks(setNodes, setEdges, pushHistory)
+│   └── comment/
+│       ├── index.jsx             ← CommentNode component
+│       ├── config.js             ← NOTE_PALETTE (5 sticky-note colors); no connections
+│       └── callbacks.js          ← useCommentCallbacks(setNodes, pushHistory)
 ├── utils/
 │   └── uid.js                    ← shared ID counter (Date.now() seed)
 ├── components/
@@ -72,7 +84,8 @@ src/
 │   ├── useContextMenu.js         ← menu state + onPaneContextMenu / onNodeContextMenu
 │   ├── useLineagePersistence.js  ← save / load localStorage, export PNG
 │   └── useLineageState.js        ← state + history; composes per-type callback hooks;
-│                                    addNodeOfType(type, x, y) uses registry config.make()
+│                                    addNodeOfType(type, x, y) uses registry config.make();
+│                                    clipboard/pasteCount refs for copy-paste
 ├── constants.js                  ← DRAG_TYPE, STORAGE_KEY, JOIN_TYPES, JOIN_ACTIVE_STYLES,
 │                                    ATTR_TYPES, ATTR_TYPE_META  (no per-node colors/sizes)
 ├── App.jsx                       ← UI shell: imports nodeTypes/isValidConnection/getMinimapColor
@@ -94,7 +107,7 @@ src/
 - Per-column handles: left dot (target) + right dot (source) for manual edge drawing
 - Two teal square handles at top corners:
   - `df-in` (top-left) — receives connection from MergeNode output
-  - `df-out` (top-right) — sends connection to MergeNode input
+  - `df-out` (top-right) — sends connection to MergeNode / FilterNode / GroupByNode input
 - **Type badge** (`str`/`int`/`flt`/`dat`/`bool`) before each column name — click to cycle type; colored per type
 
 ### FunctionNode
@@ -110,6 +123,31 @@ src/
 - Key pairs editor: add/remove `left_col = right_col` pairs with dropdowns
 - Auto-shows output columns from both connected DFs (draggable to link downstream)
 
+### FilterNode (amber/orange)
+- DF-level handles: `filter-in` (left) ← from `df-out`; `filter-out` (right) → to `df-in`
+- Header: editable label
+- Body: single WHERE condition text field (debounced, monospace)
+- Edge color from `filter-out`: orange (`#f97316`)
+
+### GroupByNode (sky/cyan)
+- **Column-level handles** — no DF-level connection; works like FunctionNode
+- **Left panel (Inputs)**: drop zone; drag columns from any node → creates input entry + cyan edge
+  - Inputs grouped by source node label
+  - Toggle button `⊞` / `○` per input to mark it as a group-by key
+  - `×` to delete input (also removes from keys and any aggregations referencing it)
+- **Right panel (Outputs)**:
+  - *Group by* section: inputs marked as keys appear here, each with a draggable source handle
+  - *Aggregations* section: rows of (column dropdown, function, output name), each with source handle
+  - Agg functions: `sum` / `mean` / `count` / `min` / `max` / `first` / `last`
+- `cloneNodeData` in `useLineageState` remaps inputs + groupByInputIds + aggregation.inputId on paste
+
+### CommentNode (sticky note)
+- No handles — pure canvas decoration
+- Color picker bar: 5 palette options (yellow / pink / green / blue / purple)
+- Body: `<textarea>` with debounced `onCommentTextChange`
+- Background IS the note color (light pastels on dark canvas)
+- No callbacks for history on text change (avoids spamming history while typing)
+
 ### Canvas
 - Pan + zoom (React Flow built-in)
 - Drag nodes from header area
@@ -118,6 +156,14 @@ src/
 - Select nodes + Delete key → removes nodes and their edges
 - Click edge + Delete → removes edge
 - `isValidConnection` is assembled from registry: column `-source → -target` (global rule) + per-node `connections` arrays
+
+### Copy / Paste
+- `Ctrl+C` / `Cmd+C` — copies all selected nodes into a `clipboard` ref; resets paste counter
+- `Ctrl+D` / `Cmd+D` — pastes clipboard with offset `+40px × pasteCount`; pasted nodes become selected, originals deselect
+- Internal IDs remapped on paste via `cloneNodeData()` so handles don't collide:
+  - DataFrameNode → attribute IDs
+  - FunctionNode → input + output IDs
+  - GroupByNode → input IDs, groupByInputIds, aggregation IDs + inputId refs
 
 ### Undo / Redo
 - `Ctrl+Z` / `Cmd+Z` — undo last mutation
@@ -173,49 +219,72 @@ Each node type lives in `src/nodes/<type>/` with three files:
 2. Create `src/nodes/<type>/callbacks.js` — export `use<Type>Callbacks` hook
 3. Create `src/nodes/<type>/index.jsx` — the React component
 4. Add **one line** to `registry.js`: `{ config: myConfig, component: MyNode }`
+5. Import and compose the callbacks hook in `useLineageState.js`
 
-That's it. `nodeTypes`, `isValidConnection`, `ADDABLE_NODES`, `getDagre*`, `getMinimapColor` all update automatically.
+`nodeTypes`, `isValidConnection`, `ADDABLE_NODES`, `getDagre*`, `getMinimapColor` all update automatically from step 4.
 
 ### Callback pattern
-All node mutation callbacks are split into per-type hooks (`useDataFrameCallbacks`, etc.)
-and composed in `useLineageState`:
+All node mutation callbacks are split into per-type hooks and composed in `useLineageState`:
 
 ```js
 const dfCbs = useDataFrameCallbacks(setNodes, setEdges, pushHistory);
 const mgCbs = useMergeCallbacks(setNodes, pushHistory);
 const fnCbs = useFunctionCallbacks(setNodes, setEdges, pushHistory);
-callbacks.current = { ...dfCbs, ...mgCbs, ...fnCbs };
+const ftCbs = useFilterCallbacks(setNodes, pushHistory);
+const gbCbs = useGroupByCallbacks(setNodes, setEdges, pushHistory);
+const cmCbs = useCommentCallbacks(setNodes, pushHistory);
+callbacks.current = { ...dfCbs, ...mgCbs, ...fnCbs, ...ftCbs, ...gbCbs, ...cmCbs };
 ```
 
-Then injected into every node's `data` via `attachCallbacks()` + a `callbacks.current` ref
+Injected into every node's `data` via `attachCallbacks()` + a `callbacks.current` ref
 (avoids stale closures without recreating node objects on every render).
+
+`onLabelChange` from `useDataFrameCallbacks` is reused by all node types that need label editing
+(FunctionNode, FilterNode, GroupByNode) — they all do the same `data.label` update.
 
 ### Undo/Redo pattern
 `history` and `future` are plain refs (not state) holding `{ nodes, edges }` snapshots.
 `nodesRef`/`edgesRef` mirror current state synchronously so snapshots can be taken
 before functional `setNodes`/`setEdges` updates are applied.
 
+### Copy/Paste pattern
+`clipboard` ref stores an array of node objects at copy time.
+`pasteCount` ref tracks how many times the current clipboard has been pasted (for offset accumulation).
+`cloneNodeData(type, data)` — module-level helper in `useLineageState.js` — remaps internal IDs per node type so pasted nodes don't share handle IDs with originals.
+
 ### Drag system
-Two independent drag flows share the same HTML5 `draggable` API:
+All drag flows share the HTML5 `draggable` API + `DragContext` ref:
 
 | Drag type | Source | Destination | Effect |
 |---|---|---|---|
-| Reorder | attribute row | same node | reorder via `onReorderAttributes` |
-| Lineage | attribute row | different DataFrame | copy column + create edge |
+| Reorder | attribute row | same DataFrame | reorder via `onReorderAttributes` |
+| Lineage | attribute row | different DataFrame | copy column + edge |
 | Function input | attribute row | FunctionNode input panel | add input entry + edge |
-| Merge output | MergeNode output row | any node | create lineage edge |
+| GroupBy input | attribute row | GroupByNode input panel | add input entry + cyan edge |
+| Merge output | MergeNode output row | any node | lineage edge |
+| GroupBy output | group-by key or agg row | any node | lineage edge |
 
-`DragContext` (React Context + `useRef`) stores the active drag payload.
-Read happens synchronously in event handlers — no re-renders triggered.
+`DragContext` read happens synchronously in event handlers — no re-renders triggered.
 
 ### `isValidConnection` rules
 ```
-Column lineage:   *-source  →  *-target       (global, all nodes)
-DF → Merge:       df-out    →  left-in / right-in
-Merge → DF:       out       →  df-in
+Column lineage:   *-source   →  *-target        (global, all nodes)
+DF → Merge:       df-out     →  left-in / right-in
+Merge → DF:       out        →  df-in
+DF → Filter:      df-out     →  filter-in
+Filter → DF:      filter-out →  df-in
 ```
-New operator types declare their own rules in `config.connections`.
-Example for FilterNode: `[['df-out', 'filter-in'], ['filter-out', 'df-in']]`
+GroupByNode uses only column-level handles (no DF-level rules).
+CommentNode has no handles.
+
+### Operator edge colors
+| Source handle | Color |
+|---|---|
+| `df-out` | purple `#7c3aed` |
+| `out` (Merge) | purple `#7c3aed` |
+| `filter-out` | orange `#f97316` |
+| GroupBy edges | cyan `#0ea5e9` (set at drop time in `onGroupByInputDrop`) |
+| column lineage | default (React Flow gray) |
 
 ---
 
@@ -223,8 +292,7 @@ Example for FilterNode: `[['df-out', 'filter-in'], ['filter-out', 'df-in']]`
 
 ### Tailwind v4 install
 `npm install -D tailwindcss postcss autoprefixer` pulled Tailwind v4 which has
-no `tailwindcss` CLI binary in node_modules/.bin — `npx tailwindcss init -p`
-silently failed. Fixed by pinning `tailwindcss@3`.
+no `tailwindcss` CLI binary — `npx tailwindcss init -p` silently failed. Fixed by pinning `tailwindcss@3`.
 
 ### `App.js` shadowing `App.jsx`
 CRA scaffolded `App.js`. After creating `App.jsx`, the old file took priority.
@@ -235,7 +303,7 @@ Fixed by deleting `App.js`, `App.css`, and `logo.svg`.
 
 ### Attribute drag conflicting with node drag
 First attempt used only `e.stopPropagation()` on `dragstart`. React Flow still
-captured the mousedown and moved the node. Fix: add `onMouseDown: e.stopPropagation()`
+captured the mousedown and moved the node. Fix: `onMouseDown: e.stopPropagation()`
 on every draggable attribute row.
 
 ### `dataTransfer.getData` blocked during dragover
@@ -246,28 +314,6 @@ Fixed with the `DragContext` ref set at `dragstart`.
 ---
 
 ## Next Things To Build
-
-### In progress / decided
-
-**Filter node** (`filterNode`)
-- Single input (`filter-in`) + single output (`filter-out`) — both DF-level handles
-- Body: one text field for the condition (e.g. `amount > 100`)
-- Connections: `['df-out', 'filter-in']`, `['filter-out', 'df-in']`
-- Color scheme: amber/orange (distinct from existing types)
-- Recipe: `nodes/filter/{config,callbacks,index}.jsx` + one line in `registry.js`
-
-**GroupBy / Agg node** (`groupByNode`)
-- Single input DF, single output DF
-- UI: list of group-by columns (multi-select from input DF) + aggregation rows (col → fn → output name)
-- Agg functions: `sum`, `mean`, `count`, `min`, `max`, `first`, `last`
-- Connections same pattern as FilterNode
-
-**Comment / annotation node** (`commentNode`)
-- No handles — pure canvas decoration
-- Body: resizable textarea
-- Optional color picker (sticky-note palette)
-- `menu` entry in config so it appears in right-click / toolbar
-- No callbacks needed (just `onLabelChange` for text)
 
 ### Medium priority
 
@@ -280,9 +326,6 @@ INNER JOIN raw_customers r ON l.customer_id = r.customer_id
 ```
 Start with MergeNode → `JOIN`, DataFrameNode → `FROM`.
 Lives in `useLineagePersistence`, copy to clipboard or download `.sql`.
-
-**Copy / paste nodes (`Ctrl+C` / `Ctrl+D`)**
-Store copied node in a ref, paste offset by (+40, +40).
 
 ### Lower priority
 

@@ -80,7 +80,7 @@ export default function Toolbar({
         }
       >
         <span>◎</span>
-        <span>Трек</span>
+        <span>Track</span>
       </button>
 
       {selectedDFCount > 0 && (

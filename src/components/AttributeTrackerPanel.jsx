@@ -84,7 +84,7 @@ export default function AttributeTrackerPanel({ query, matchCount, suggestions, 
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Отслеживать атрибут по имени…"
+          placeholder="Track attribute by name…"
           className="flex-1 bg-transparent outline-none text-sm text-slate-100 placeholder-slate-600"
           style={{ minWidth: 200 }}
         />
@@ -97,7 +97,7 @@ export default function AttributeTrackerPanel({ query, matchCount, suggestions, 
               color: matchCount > 0 ? '#fbbf24' : '#64748b',
             }}
           >
-            {matchCount} {matchCount === 1 ? 'нода' : matchCount >= 2 && matchCount <= 4 ? 'ноды' : 'нод'}
+            {matchCount} {matchCount === 1 ? 'node' : 'nodes'}
           </span>
         )}
 
@@ -105,7 +105,7 @@ export default function AttributeTrackerPanel({ query, matchCount, suggestions, 
           <button
             onClick={() => { onQueryChange(''); setActiveIdx(-1); }}
             className="text-slate-600 hover:text-slate-400 text-sm select-none"
-            title="Очистить"
+            title="Clear"
           >
             ×
           </button>
@@ -115,7 +115,7 @@ export default function AttributeTrackerPanel({ query, matchCount, suggestions, 
 
         <button
           onClick={onClose}
-          title="Выйти из режима отслеживания (Esc)"
+          title="Exit tracking mode (Esc)"
           className="text-slate-600 hover:text-amber-400 text-xs select-none px-0.5 transition-colors"
         >
           ✕
@@ -154,7 +154,7 @@ export default function AttributeTrackerPanel({ query, matchCount, suggestions, 
                 className="text-xs ml-3 flex-shrink-0 select-none"
                 style={{ color: '#64748b' }}
               >
-                {s.count} {s.count === 1 ? 'нода' : s.count >= 2 && s.count <= 4 ? 'ноды' : 'нод'}
+                {s.count} {s.count === 1 ? 'node' : 'nodes'}
               </span>
             </div>
           ))}

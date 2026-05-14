@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { uid } from './utils/uid';
 import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -7,6 +7,7 @@ import Toolbar from './Toolbar';
 import { DragProvider } from './components/DragContext';
 import ContextMenu from './components/ContextMenu';
 import SearchModal from './components/SearchModal';
+import AttributeTrackerPanel from './components/AttributeTrackerPanel';
 import TabBar from './components/TabBar';
 import SqlImportModal from './components/SqlImportModal';
 import SqlExportModal from './components/SqlExportModal';
@@ -110,6 +111,50 @@ export default function App() {
     });
   }, [addNodeOfType]);
 
+  // ── Attribute Tracker ──────────────────────────────────────────────────
+
+  const [trackerOpen, setTrackerOpen] = useState(false);
+  const [trackerQuery, setTrackerQuery] = useState('');
+
+  const trackerMatchIds = useMemo(() => {
+    const q = trackerQuery.trim().toLowerCase();
+    if (!trackerOpen || !q) return null;
+    const ids = new Set();
+    for (const n of nodes) {
+      const names = [
+        ...(n.data.attributes   || []).map((a) => a.name),
+        ...(n.data.inputs       || []).map((i) => i.name),
+        ...(n.data.outputs      || []).map((o) => o.name),
+        ...(n.data.aggregations || []).map((a) => a.outputName),
+      ].filter(Boolean);
+      if (names.some((name) => name.toLowerCase().includes(q))) ids.add(n.id);
+    }
+    return ids;
+  }, [trackerOpen, trackerQuery, nodes]);
+
+  const trackedNodes = useMemo(() => {
+    if (!trackerMatchIds) return nodesWithCallbacks;
+    return nodesWithCallbacks.map((n) => {
+      const matched = trackerMatchIds.has(n.id);
+      return {
+        ...n,
+        style: matched
+          ? { ...n.style, opacity: 1, boxShadow: '0 0 0 2px #f59e0b, 0 0 14px rgba(245,158,11,0.35)', borderRadius: 8, transition: 'all 0.2s ease' }
+          : { ...n.style, opacity: 0.12, transition: 'all 0.2s ease' },
+      };
+    });
+  }, [nodesWithCallbacks, trackerMatchIds]);
+
+  const trackedEdges = useMemo(() => {
+    if (!trackerMatchIds) return edges;
+    return edges.map((e) => {
+      const visible = trackerMatchIds.has(e.source) || trackerMatchIds.has(e.target);
+      return visible
+        ? { ...e, style: { ...e.style, opacity: 1, transition: 'opacity 0.2s ease' } }
+        : { ...e, style: { ...e.style, opacity: 0.06, transition: 'opacity 0.2s ease' } };
+    });
+  }, [edges, trackerMatchIds]);
+
   // ── Search ─────────────────────────────────────────────────────────────
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -126,6 +171,11 @@ export default function App() {
       setSearchOpen(true);
       return;
     }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+      e.preventDefault();
+      setTrackerOpen((v) => { if (v) setTrackerQuery(''); return !v; });
+      return;
+    }
     onKeyDown(e);
   }, [onKeyDown]);
 
@@ -136,8 +186,8 @@ export default function App() {
       <div className="w-screen h-screen bg-slate-900 flex flex-col" onKeyDown={handleKeyDown} tabIndex={0}>
         <div ref={reactFlowWrapper} className="flex-1 min-h-0 relative">
           <ReactFlow
-            nodes={nodesWithCallbacks}
-            edges={edges}
+            nodes={trackedNodes}
+            edges={trackedEdges}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
@@ -178,9 +228,20 @@ export default function App() {
           onRedo={redo}
           onAutoLayout={handleAutoLayout}
           onSearch={() => setSearchOpen(true)}
+          onTrackAttr={() => { setTrackerOpen((v) => { if (v) setTrackerQuery(''); return !v; }); }}
+          trackerActive={trackerOpen}
           onImportSql={() => setSqlImportOpen(true)}
           onExportSql={handleExportSql}
         />
+
+        {trackerOpen && (
+          <AttributeTrackerPanel
+            query={trackerQuery}
+            matchCount={trackerMatchIds ? trackerMatchIds.size : 0}
+            onQueryChange={setTrackerQuery}
+            onClose={() => { setTrackerOpen(false); setTrackerQuery(''); }}
+          />
+        )}
 
         <ContextMenu
           menu={menu}

@@ -28,7 +28,7 @@ export function useLineagePersistence({ nodes, edges, restoreState, showToast })
     const flowEl = document.querySelector('.react-flow__viewport');
     if (!flowEl) return;
     toPng(flowEl, {
-      backgroundColor: '#0f172a', width, height,
+      backgroundColor: '#0f172a', width, height, pixelRatio: 3,
       style: { width, height, transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` },
     }).then((dataUrl) => {
       const a = document.createElement('a');

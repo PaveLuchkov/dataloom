@@ -4,7 +4,7 @@ export default function Toolbar({
   addableNodes, onAddNode,
   onSave, onLoad, onSaveToFile, onLoadFromFile, onExportPng,
   selectedDFCount, onMergeSelected,
-  onUndo, onRedo, onAutoLayout, onSearch, onImportSql, onExportSql,
+  onUndo, onRedo, onAutoLayout, onSearch, onTrackAttr, trackerActive, onImportSql, onExportSql,
 }) {
   const canMerge = selectedDFCount === 2;
 
@@ -68,6 +68,19 @@ export default function Toolbar({
       >
         <span>⌕</span>
         <kbd className="text-slate-500 text-xs" style={{ fontSize: 9 }}>⌘K</kbd>
+      </button>
+
+      <button
+        onClick={onTrackAttr}
+        title="Отслеживать атрибут по имени (Ctrl+Shift+F)"
+        className="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5"
+        style={trackerActive
+          ? { background: 'rgba(161,98,7,0.35)', color: '#fbbf24', border: '1px solid #a16207' }
+          : { background: '#334155', color: '#94a3b8' }
+        }
+      >
+        <span>◎</span>
+        <span>Трек</span>
       </button>
 
       {selectedDFCount > 0 && (

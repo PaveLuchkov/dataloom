@@ -28,10 +28,19 @@ export default function FilterNode({ id, data }) {
 
   const debounceRefs = useRef(new Map());
   const onExprInput = useCallback((e, condId) => {
-    const val = e.target.value;
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+    const val = el.value;
     clearTimeout(debounceRefs.current.get(condId));
     debounceRefs.current.set(condId, setTimeout(() => onUpdateFilterExpr(id, condId, val), 400));
   }, [id, onUpdateFilterExpr]);
+
+  const autoResize = useCallback((el) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, []);
 
   return (
     <div
@@ -68,11 +77,11 @@ export default function FilterNode({ id, data }) {
           const canToggle = idx > 0;
           const canDelete = conditions.length > 1;
           return (
-            <div key={cond.id} className="flex items-center gap-1.5 mb-1.5">
+            <div key={cond.id} className="flex items-start gap-1.5 mb-1.5">
               <span
                 onClick={canToggle ? (e) => { stop(e); onToggleFilterOp(id, cond.id); } : undefined}
                 onMouseDown={stop}
-                className="text-xs font-mono rounded flex-shrink-0 select-none text-center"
+                className="text-xs font-mono rounded flex-shrink-0 select-none text-center mt-0.5"
                 style={{
                   color: opStyle.color,
                   background: opStyle.bg,
@@ -85,14 +94,15 @@ export default function FilterNode({ id, data }) {
               >
                 {cond.op.toLowerCase()}
               </span>
-              <input
+              <textarea
                 key={`${cond.id}-input`}
-                type="text"
+                ref={autoResize}
                 defaultValue={cond.expr}
                 onInput={(e) => onExprInput(e, cond.id)}
                 onChange={() => {}}
                 onClick={stop}
                 onMouseDown={stop}
+                rows={1}
                 placeholder={idx === 0 ? 'e.g. amount > 100' : 'condition…'}
                 className="flex-1 min-w-0 text-xs px-2 py-1 rounded outline-none font-mono"
                 style={{
@@ -100,13 +110,16 @@ export default function FilterNode({ id, data }) {
                   border: `1px solid ${colors.border}`,
                   color: '#fed7aa',
                   caretColor: '#fb923c',
+                  resize: 'none',
+                  overflow: 'hidden',
+                  lineHeight: '1.5',
                 }}
               />
               {canDelete && (
                 <button
                   onClick={(e) => { stop(e); onDeleteFilterCondition(id, cond.id); }}
                   onMouseDown={stop}
-                  className="text-red-400 hover:text-red-300 text-xs w-4 h-4 flex items-center justify-center flex-shrink-0 transition-colors"
+                  className="text-red-400 hover:text-red-300 text-xs w-4 h-4 flex items-center justify-center flex-shrink-0 transition-colors mt-0.5"
                 >
                   ×
                 </button>

@@ -46,7 +46,7 @@ Type `@` inside any Filter condition and get instant suggestions pulled from con
 
 ```bash
 git clone https://github.com/PavelLuchkov/dataloom.git
-cd loom
+cd dataloom
 npm install
 npm start          # opens at http://localhost:3000
 ```

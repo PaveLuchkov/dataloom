@@ -28,11 +28,16 @@ Start with: `PORT=3001 npm start` from `lineage-editor/`.
 
 ### Git history (latest first)
 ```
-1c430e3  стадии
+3cd47a2  track whole word and highlight it
+61ea86f  Вопрос для шорткатов
+1ac30b6  Шорткаты + тулбар обновленный
+a12f6a2  screenshot fix
+0ecee5b  Возможность писать атрибуты в ноде условия через @
+1c430e3  стадии (canvas tabs)
 4ff0c6b  Больше зум
 1783bdb  расширяющееся окно для ноды условия
 e8b76db  Add multi-condition WHERE builder to FilterNode
-c6370fc  Drag ANd drop самих фреймов на всем уровне
+c6370fc  Drag And drop самих фреймов на всем уровне
 93f72ba  SQL Export + drag f
 84b2c0f  Add SQL SELECT parser and import modal
 8118272  Add copy/paste nodes (Ctrl+C / Ctrl+D)
@@ -75,13 +80,20 @@ src/
 ├── utils/
 │   └── uid.js                    ← shared ID counter (Date.now() seed)
 ├── components/
+│   ├── AttributeTrackerPanel.jsx ← Track overlay (Ctrl+Shift+F): input + suggestions dropdown
 │   ├── ContextMenu.jsx           ← reads ADDABLE_NODES from registry; node label from getNodeDisplayName
 │   ├── DragContext.jsx           ← React Context with useRef for drag state (no re-renders)
 │   ├── EditableText.jsx          ← shared inline-edit component (double-click to edit)
+│   ├── HighlightedConditionInput.jsx ← textarea with @column syntax highlighting + autocomplete
 │   ├── NodeErrorBoundary.jsx     ← class component; isolates node render crashes
-│   └── SearchModal.jsx           ← Cmd+K search overlay
+│   ├── SearchModal.jsx           ← Cmd+K search overlay
+│   ├── ShortcutsModal.jsx        ← ? keyboard shortcuts reference overlay
+│   ├── SqlExportModal.jsx        ← modal showing generated SQL with copy button
+│   ├── SqlImportModal.jsx        ← modal to paste SQL SELECT → auto-create DataFrameNode
+│   └── TabBar.jsx                ← canvas tabs bar (add, rename, close, switch)
 ├── hooks/
 │   ├── useAutoLayout.js          ← dagre LR layout; sizes come from registry
+│   ├── useCanvasTabs.js          ← multi-canvas tab state; each tab saved to its own localStorage key
 │   ├── useContextMenu.js         ← menu state + onPaneContextMenu / onNodeContextMenu
 │   ├── useLineagePersistence.js  ← save / load localStorage, export PNG
 │   └── useLineageState.js        ← state + history; composes per-type callback hooks;
@@ -89,10 +101,13 @@ src/
 │                                    clipboard/pasteCount refs for copy-paste;
 │                                    connectedDFs derived from edges for FunctionNode;
 │                                    result-DF column sync via useEffect
-├── constants.js                  ← DRAG_TYPE, STORAGE_KEY, JOIN_TYPES, JOIN_ACTIVE_STYLES,
+├── constants.js                  ← DRAG_TYPE, STORAGE_KEY, TABS_KEY, ACTIVE_TAB_KEY, canvasKey(),
+│                                    JOIN_TYPES, JOIN_ACTIVE_STYLES,
 │                                    ATTR_TYPES, ATTR_TYPE_META  (no per-node colors/sizes)
 ├── App.jsx                       ← UI shell: imports nodeTypes/isValidConnection/getMinimapColor
-│                                    from registry; passes addableNodes to Toolbar + ContextMenu
+│                                    from registry; passes addableNodes to Toolbar + ContextMenu;
+│                                    owns tracker state (trackerQuery, trackerWholeWord);
+│                                    injects trackerHighlight into node.data via trackedNodes memo
 └── Toolbar.jsx                   ← add-node buttons rendered from ADDABLE_NODES
 ```
 
@@ -140,8 +155,10 @@ src/
   - `+ and` / `+ or` buttons add new condition rows
   - Each added row has a clickable `and`/`or` badge — click to toggle between AND and OR
   - `×` removes a row (available when more than one condition exists)
-  - Each expression field is an **auto-resizing textarea** — expands vertically for long Python conditions, no horizontal scroll
-  - Inputs debounced 400 ms before saving
+  - Each expression field is a **`HighlightedConditionInput`** — auto-resizing textarea with:
+    - `@column_name` syntax: highlights `@mentions` with amber backdrop as you type
+    - Dropdown autocomplete triggered by `@`: suggests column names from upstream connected DFs
+    - Inputs debounced 400 ms before saving
 - **Backward compat**: old saves with a single `condition` string are read as one WHERE row
 
 ### GroupByNode (sky/cyan)
@@ -170,6 +187,13 @@ Any `dataFrameNode` connected to a `mergeNode`'s `df-out` handle has its attribu
 - Chained merges resolve across 2 render cycles: first render updates result_df1, second render sees updated attrs and updates result_df2
 - Comparison via `JSON.stringify` prevents infinite re-render loop
 - The result DF's manual edits to columns are overwritten — it is treated as schema-derived
+
+### Canvas Tabs (Stages)
+- **Tab bar** at the bottom of the screen — add, rename (double-click), close tabs
+- Each tab is an independent canvas with its own nodes/edges stored under `canvasKey(tabId)` in localStorage
+- First load migrates the old single-canvas `STORAGE_KEY` data into tab 1 automatically
+- `useCanvasTabs` hook manages tab list (`TABS_KEY`) and active tab (`ACTIVE_TAB_KEY`) in localStorage
+- Switching tabs unmounts current ReactFlow and mounts the new one (full state swap via `key` prop)
 
 ### Canvas
 - Pan + zoom (React Flow built-in); `minZoom: 0.05` / `maxZoom: 2`
@@ -207,9 +231,32 @@ Any `dataFrameNode` connected to a `mergeNode`'s `df-out` handle has its attribu
 - Results show type icon, node name; column matches show `node › column` with type badge
 - Click result (or Enter on selected item) → `fitView` to that node with animation
 - Arrow keys navigate results, Escape closes
+- **`W=` toggle** — exact match mode: only returns results where the full name equals the query (no partial matches like `column_1` when searching `column`)
+
+### Attribute Tracker (`Ctrl+Shift+F`)
+- Floating panel below toolbar — amber theme
+- Type a column name → all nodes containing that attribute glow amber (`box-shadow`); unmatched nodes fade to 12% opacity; unmatched edges fade to 6%
+- **Suggestions dropdown**: shows up to 12 matching attribute names from all nodes, sorted by frequency; arrow keys + Enter to select; click to commit
+- **Match count badge**: shows how many nodes contain the attribute
+- **`W=` toggle** — exact match mode (same as Search)
+- **Attribute-level highlight in nodes**: matched attribute rows inside each node get amber background + bold amber text — works in DataFrameNode columns, FunctionNode inputs and outputs
+- `trackerHighlight: { query, wholeWord }` is injected into `node.data` via the `trackedNodes` memo in App.jsx; nodes read it directly
+- Closing the panel resets query, wholeWord, and all highlight styles
+
+### SQL Export
+- Toolbar button → generates SQL and opens `SqlExportModal` with syntax-highlighted output + copy button
+- Walks nodes/edges to produce `SELECT … FROM … JOIN … WHERE … GROUP BY` chains
+- Covers MergeNode → `JOIN`, FilterNode → `WHERE`, GroupByNode → `GROUP BY`
+
+### SQL Import
+- Toolbar button → opens `SqlImportModal`; paste a `SELECT` statement → parses column names and table name → auto-creates a DataFrameNode with columns pre-filled
+
+### Keyboard Shortcuts Reference
+- `?` key → opens `ShortcutsModal` overlay listing all keyboard shortcuts
+- Also accessible via `?` icon button in toolbar
 
 ### Persistence
-- Save / Load buttons → `localStorage` key `lineage-editor-state`
+- Save / Load buttons → `localStorage` per-tab key via `canvasKey(tabId)`
 - Saves full `{ nodes, edges }` — all positions, types, data, edges
 - First load with no saved state → demo graph: `raw_orders`, `raw_customers`, `orders_enriched`
 
@@ -286,6 +333,13 @@ Injected into every node's `data` via `attachCallbacks()` + a `callbacks.current
 `onLabelChange` from `useDataFrameCallbacks` is reused by all node types that need label editing
 (FunctionNode, FilterNode, GroupByNode) — they all do the same `data.label` update.
 
+### Attribute Tracker highlight injection
+The tracker doesn't use React Context or a separate state system. Instead, `App.jsx` has a `trackedNodes` memo that:
+1. Applies opacity / box-shadow styles to matched/unmatched nodes
+2. Injects `data.trackerHighlight = { query, wholeWord }` into matched node data (null for unmatched / when tracker is closed)
+
+Node components (DataFrameNode, FunctionNode) read `data.trackerHighlight` directly and apply bold + amber styling to matching attribute rows. This keeps highlight logic co-located with rendering without adding global state.
+
 ### FunctionNode `connectedDFs` derivation
 FunctionNode does not store which DFs are connected in its `data`. Instead, `nodesWithCallbacks`
 in `useLineageState` computes `connectedDFs` live from edges:
@@ -301,6 +355,19 @@ const connectedDFs = edges
 This means deleting the `df-out → df-in` edge automatically removes the group from the Inputs panel
 without any extra callback. Individual column inputs (from column drags) are still stored in `data.inputs`
 and grouped under the same `sourceNodeId` key.
+
+### Canvas Tabs storage layout
+```
+localStorage keys:
+  lineage-tabs          → JSON array of { id, name }
+  lineage-active-tab    → active tab id string
+  lineage-canvas-{id}   → { nodes, edges } for each tab
+  lineage-editor-state  → legacy single-canvas key (migrated to tab 1 on first load)
+```
+
+`useCanvasTabs` handles load/save/switch. App.jsx uses the active tab's canvas key for all
+persistence operations. The ReactFlow instance is re-keyed on tab switch (`key={activeTabId}`)
+to fully unmount/remount, which avoids stale internal ReactFlow state.
 
 ### Undo/Redo pattern
 `history` and `future` are plain refs (not state) holding `{ nodes, edges }` snapshots.
@@ -366,31 +433,14 @@ FunctionNode so the standard handle-drag mechanism is used — consistent with a
 
 ## Next Things To Build
 
-### Medium priority
-
-**Export to SQL**
-Walk nodes/edges, generate:
-```sql
-SELECT l.order_id, r.name
-FROM raw_orders l
-INNER JOIN raw_customers r ON l.customer_id = r.customer_id
-```
-Start with MergeNode → `JOIN`, DataFrameNode → `FROM`.
-Lives in `useLineagePersistence`, copy to clipboard or download `.sql`.
-
 ### Lower priority
-
-**Import from schema**
-Upload JSON or CSV → auto-create DataFrameNode(s) with columns pre-filled.
 
 **Validation layer**
 Highlight problems: MergeNode with no key pairs, disconnected inputs, circular paths.
-
-**Multiple canvases / tabs**
-Each tab saves to its own `localStorage` key.
 
 **Edge label tooltips**
 Show source column name on hover — use `<EdgeLabelRenderer>` overlay.
 
 **FilterNode condition autocomplete**
-Suggest column names from connected upstream DFs while typing in a condition field.
+Currently `@column` autocomplete only suggests columns from nodes connected via `df-in`.
+Could extend to also suggest from nodes connected anywhere upstream in the lineage chain.

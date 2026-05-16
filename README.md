@@ -91,6 +91,8 @@ No backend, no database — everything lives in `localStorage`.
 5. **Trace lineage** by clicking `◎` on any column — the graph highlights its full lineage path
 6. **Share** via the share-link button or export to JSON
 
+video-guide:
+https://youtu.be/JvZPa4PxpMU
 ---
 
 ## Stack

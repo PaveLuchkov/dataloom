@@ -14,6 +14,7 @@ import SqlImportModal from './components/SqlImportModal';
 import SqlExportModal from './components/SqlExportModal';
 import ShortcutsModal from './components/ShortcutsModal';
 import { generateSql } from './utils/exportSql';
+import { computeNodeOutputAttributes } from './utils/nodeOutputAttrs';
 import { useLineageState } from './hooks/useLineageState';
 import { useLineagePersistence } from './hooks/useLineagePersistence';
 import { useCanvasTabs } from './hooks/useCanvasTabs';
@@ -223,11 +224,22 @@ export default function App() {
         (src.data.outputs    || []).find((o) => o.id === attrId)?.name ||
         (src.data.mappings   || []).find((m) => m.id === attrId)?.to   ||
         (() => { const m = attrId.match(/^gbout-(.+)$/); return m ? (src.data.inputs||[]).find((i) => i.id === m[1])?.attrName : null; })() ||
+        (() => { const m = attrId.match(/^aggout-(.+)$/); return m ? (src.data.aggregations||[]).find((a) => a.id === m[1])?.outputName : null; })() ||
         (() => { const m = attrId.match(/^mout-[LR]-(.+)$/); if (!m) return null; return [...(src.data.leftDF?.attributes||[]),...(src.data.rightDF?.attributes||[])].find((a) => a.id === m[1])?.name; })() ||
         null;
       return name ? { ...e, data: { ...e.data, label: name } } : e;
     });
   }, [trackedEdges, edges, trackerMatchIds, nodes]);
+
+  // Pre-compute output attributes for every node so SearchModal can search
+  // across all node types (MergeNode, FilterNode, GroupByNode, etc.)
+  const nodesForSearch = useMemo(
+    () => nodesWithCallbacks.map((n) => ({
+      ...n,
+      data: { ...n.data, _outputAttrs: computeNodeOutputAttributes(n, edges, nodes) },
+    })),
+    [nodesWithCallbacks, edges, nodes]
+  );
 
   // ── Search ─────────────────────────────────────────────────────────────
 
@@ -374,7 +386,7 @@ export default function App() {
 
         {searchOpen && (
           <SearchModal
-            nodes={nodes}
+            nodes={nodesForSearch}
             onNavigate={navigateToNode}
             onClose={() => setSearchOpen(false)}
           />

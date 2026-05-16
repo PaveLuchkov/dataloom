@@ -3,12 +3,18 @@ import { ATTR_TYPE_META } from '../constants';
 
 const NODE_ICON = {
   dataFrameNode: { symbol: '▣', color: '#60a5fa' },
-  functionNode:  { symbol: 'ƒ', color: '#4ade80' },
+  functionNode:  { symbol: 'ƒ',  color: '#4ade80' },
   mergeNode:     { symbol: '⋈', color: '#c084fc' },
+  filterNode:    { symbol: 'σ',  color: '#fb923c' },
+  groupByNode:   { symbol: '⊞', color: '#38bdf8' },
+  renameNode:    { symbol: '⟲', color: '#818cf8' },
+  concatNode:    { symbol: '∪',  color: '#a3e635' },
+  transformNode: { symbol: '⊕', color: '#f472b6' },
+  commentNode:   { symbol: '✎',  color: '#94a3b8' },
 };
 
 function matches(text, q, wholeWord) {
-  const t = text.toLowerCase();
+  const t = (text || '').toLowerCase();
   return wholeWord ? t === q : t.includes(q);
 }
 
@@ -17,7 +23,7 @@ function buildResults(query, nodes, wholeWord) {
   const results = [];
 
   for (const node of nodes) {
-    const icon = NODE_ICON[node.type] || NODE_ICON.dataFrameNode;
+    const icon = NODE_ICON[node.type] || { symbol: '▣', color: '#60a5fa' };
 
     if (!q) {
       results.push({ key: `${node.id}-label`, nodeId: node.id, nodeLabel: node.data.label, nodeType: node.type, icon, matchKind: 'label' });
@@ -28,23 +34,31 @@ function buildResults(query, nodes, wholeWord) {
       results.push({ key: `${node.id}-label`, nodeId: node.id, nodeLabel: node.data.label, nodeType: node.type, icon, matchKind: 'label' });
     }
 
-    for (const attr of node.data.attributes || []) {
+    // Search output attributes for all node types via pre-computed _outputAttrs
+    const outputAttrs = node.data._outputAttrs || node.data.attributes || [];
+    for (const attr of outputAttrs) {
       if (matches(attr.name, q, wholeWord)) {
         results.push({
-          key: `${node.id}-attr-${attr.id}`,
+          key: `${node.id}-out-${attr.id || attr.name}`,
           nodeId: node.id, nodeLabel: node.data.label, nodeType: node.type, icon,
           matchKind: 'column', matchText: attr.name, attrType: attr.type || 'string',
         });
       }
     }
 
-    for (const out of node.data.outputs || []) {
-      if (matches(out.name, q, wholeWord)) {
-        results.push({
-          key: `${node.id}-out-${out.id}`,
-          nodeId: node.id, nodeLabel: node.data.label, nodeType: node.type, icon,
-          matchKind: 'column', matchText: out.name,
-        });
+    // Also search FunctionNode / GroupByNode inputs (consuming side)
+    for (const inp of node.data.inputs || []) {
+      const name = inp.attrName || inp.name;
+      if (name && matches(name, q, wholeWord)) {
+        // Only add if not already covered by _outputAttrs
+        const alreadyCovered = outputAttrs.some((a) => a.name === name);
+        if (!alreadyCovered) {
+          results.push({
+            key: `${node.id}-inp-${inp.id}`,
+            nodeId: node.id, nodeLabel: node.data.label, nodeType: node.type, icon,
+            matchKind: 'column', matchText: name, attrType: inp.attrType || 'string',
+          });
+        }
       }
     }
   }
@@ -241,10 +255,9 @@ function ResultRow({ result, query, wholeWord, selected, onMouseEnter, onClick }
         </span>
       )}
       {result.matchKind === 'label' && (
-        <span className="text-xs text-slate-700 flex-shrink-0 select-none">
-          {result.nodeType === 'dataFrameNode' ? 'df'
-            : result.nodeType === 'functionNode' ? 'fn'
-            : 'merge'}
+        <span className="text-xs text-slate-700 flex-shrink-0 select-none font-mono"
+          style={{ color: result.icon.color, opacity: 0.5 }}>
+          {result.icon.symbol}
         </span>
       )}
     </div>

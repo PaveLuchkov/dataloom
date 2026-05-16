@@ -26,17 +26,27 @@ export function computeNodeOutputAttributes(node, edges, nodes) {
 
     case 'renameNode': {
       const upstream = getUpstreamAttrs(node.id, edges, nodes);
-      const upByName = new Map(upstream.map((a) => [a.name, a]));
-      return (node.data.mappings || [])
-        .filter((m) => m.to)
-        .map((m) => {
-          const src = upByName.get(m.from);
-          return { id: m.id, name: m.to, type: src?.type || 'string' };
-        });
+      const renamedMap = new Map(
+        (node.data.mappings || []).filter((m) => m.from && m.to).map((m) => [m.from, m])
+      );
+      return upstream.map((attr) => {
+        const mapping = renamedMap.get(attr.name);
+        return mapping ? { id: mapping.id, name: mapping.to, type: attr.type } : attr;
+      });
     }
 
-    case 'transformNode':
-      return node.data.attributes || [];
+    case 'transformNode': {
+      const upstream = getUpstreamAttrs(node.id, edges, nodes);
+      const typeOverrides = new Map();
+      const droppedCols = new Set();
+      for (const op of (node.data.ops || [])) {
+        if (op.type === 'astype' && op.args?.col && op.args?.type_val) typeOverrides.set(op.args.col, op.args.type_val);
+        if (op.type === 'drop_column' && op.args?.col) droppedCols.add(op.args.col);
+      }
+      return upstream
+        .filter((a) => !droppedCols.has(a.name))
+        .map((a) => typeOverrides.has(a.name) ? { ...a, type: typeOverrides.get(a.name) } : a);
+    }
 
     case 'groupByNode': {
       const inputs = node.data.inputs || [];
@@ -124,13 +134,17 @@ export function traceColumnUpstream(nodeId, colName, edges, nodes) {
     }
 
     case 'renameNode': {
-      const mapping = (node.data.mappings || []).find((m) => m.to === colName);
-      if (!mapping) return null;
+      // If colName matches a rename mapping's output, trace upstream with the original name.
+      // Otherwise treat the column as passing through unchanged.
+      const mapping = (node.data.mappings || []).find((m) => m.from && m.to && m.to === colName);
+      const sourceColName = mapping ? mapping.from : colName;
       const step = { nodeId, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
       for (const e of edges.filter((e) => e.target === nodeId && e.targetHandle === 'df-in')) {
-        const r = traceColumnUpstream(e.source, mapping.from, edges, nodes);
+        const r = traceColumnUpstream(e.source, sourceColName, edges, nodes);
         if (r) { step.upstream = r; break; }
       }
+      // Pass-through column: only valid if found upstream; renamed column: always valid.
+      if (!mapping && !step.upstream) return null;
       return step;
     }
 
@@ -184,6 +198,9 @@ export function traceColumnUpstream(nodeId, colName, edges, nodes) {
     }
 
     case 'transformNode': {
+      // Column dropped by this node doesn't exist in its output
+      const ops = node.data.ops || [];
+      if (ops.some((op) => op.type === 'drop_column' && op.args?.col === colName)) return null;
       const step = { nodeId, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
       for (const e of edges.filter((e) => e.target === nodeId && e.targetHandle === 'df-in')) {
         const r = traceColumnUpstream(e.source, colName, edges, nodes);

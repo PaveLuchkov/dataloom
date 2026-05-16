@@ -87,7 +87,7 @@ const makeCompanionEdge = (operatorId, companionId) => ({
   data: { isCompanionEdge: true },
 });
 
-const COMPANION_TYPES = new Set(['mergeNode', 'groupByNode', 'functionNode']);
+const COMPANION_TYPES = new Set(['mergeNode', 'groupByNode', 'functionNode', 'renameNode', 'transformNode']);
 
 // ── Hook ───────────────────────────────────────────────────────────────────
 
@@ -210,13 +210,13 @@ export function useLineageState() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges]);
 
-  // Sync result-DF attributes whenever a DataFrameNode is connected (via df-in)
-  // to any operator node. The operator's output is the single source of truth.
-  // Handles chained merges, groupby outputs, function outputs, etc.
+  // Sync attributes of companion DFs from their operator's output.
+  // Only applies to DFs marked with _companionOf — regular DFs connected downstream
+  // are NOT overwritten so the user can freely edit them.
   useEffect(() => {
     let changed = false;
     const updated = nodes.map((n) => {
-      if (n.type !== 'dataFrameNode') return n;
+      if (n.type !== 'dataFrameNode' || !n.data._companionOf) return n;
       const inEdge = edges.find((e) => e.target === n.id && e.targetHandle === 'df-in' && e.sourceHandle === 'df-out');
       if (!inEdge) return n;
       const src = nodes.find((nd) => nd.id === inEdge.source);

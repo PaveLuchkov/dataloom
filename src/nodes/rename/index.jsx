@@ -14,9 +14,9 @@ const ROW_HEIGHT = 28;
 
 export default function RenameNode({ id, data }) {
   const {
-    label, mappings = [], connectedAttrs = [],
+    label, mappings = [], connectedAttrs = [], companionId,
     onLabelChange, onAddMapping, onDeleteMapping, onUpdateMapping,
-    onCodeChange, onStageChange,
+    onCodeChange, onStageChange, onCreateCompanion,
     trackerHighlight, code, stage,
   } = data;
 
@@ -92,6 +92,15 @@ export default function RenameNode({ id, data }) {
           style={{ fontSize: 10, color: colors.handleFill, opacity: codeOpen ? 1 : 0.4 }}
         >
           {codeOpen ? '[/]' : '</>'}
+        </button>
+        <button
+          onClick={(e) => { stop(e); if (!companionId) onCreateCompanion(id); }}
+          onMouseDown={stop}
+          title={companionId ? 'Output companion exists' : 'Create output DataFrame'}
+          className="flex-shrink-0 select-none text-xs font-mono transition-colors"
+          style={{ color: companionId ? colors.handleFill : '#3730a3' }}
+        >
+          {companionId ? '→●' : '→○'}
         </button>
       </div>
 

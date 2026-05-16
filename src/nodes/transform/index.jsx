@@ -8,7 +8,6 @@ import config, { TRANSFORM_OPS } from './config';
 
 const { colors } = config;
 
-
 const TYPES = ['string', 'int', 'float', 'bool', 'datetime'];
 
 function OpRow({ nodeId, op, columns, onUpdate, onDelete, stop, isTrackedAttr }) {
@@ -35,23 +34,35 @@ function OpRow({ nodeId, op, columns, onUpdate, onDelete, stop, isTrackedAttr })
         value={op.type}
         onChange={(e) => { e.stopPropagation(); onUpdate(nodeId, op.id, 'type', e.target.value); }}
         onMouseDown={stop}
-        className="text-xs rounded outline-none cursor-pointer"
+        className="text-xs rounded outline-none cursor-pointer flex-shrink-0"
         style={{ background: '#3a1505', border: `1px solid ${colors.border}`, color: '#fdba74', padding: '1px 4px' }}
       >
         {TRANSFORM_OPS.map((t) => <option key={t} value={t}>{t}</option>)}
       </select>
 
       {op.type === 'fillna' && (
-        <input
-          value={op.args.value ?? ''}
-          onChange={(e) => onUpdate(nodeId, op.id, 'value', e.target.value)}
-          onClick={stop}
-          onMouseDown={stop}
-          onKeyDown={stop}
-          placeholder="value"
-          className="flex-1 min-w-0 bg-transparent outline-none text-xs font-mono"
-          style={{ color: '#fed7aa', caretColor: '#f97316', borderBottom: `1px solid #7c2d12` }}
-        />
+        <>
+          <ColumnSelect
+            value={op.args.col ?? ''}
+            onChange={(val) => onUpdate(nodeId, op.id, 'col', val)}
+            columns={columns}
+            placeholder="— all cols —"
+            emptyPlaceholder="column"
+            selectStyle={colSelectStyle}
+            inputStyle={colInputStyle}
+            stop={stop}
+          />
+          <input
+            value={op.args.value ?? ''}
+            onChange={(e) => onUpdate(nodeId, op.id, 'value', e.target.value)}
+            onClick={stop}
+            onMouseDown={stop}
+            onKeyDown={stop}
+            placeholder="fill value"
+            className="flex-1 min-w-0 bg-transparent outline-none text-xs font-mono"
+            style={{ color: '#fed7aa', caretColor: '#f97316', borderBottom: `1px solid #7c2d12` }}
+          />
+        </>
       )}
 
       {op.type === 'astype' && (
@@ -67,10 +78,10 @@ function OpRow({ nodeId, op, columns, onUpdate, onDelete, stop, isTrackedAttr })
             stop={stop}
           />
           <select
-            value={op.args.type ?? 'string'}
+            value={op.args.type_val ?? 'string'}
             onChange={(e) => { e.stopPropagation(); onUpdate(nodeId, op.id, 'type_val', e.target.value); }}
             onMouseDown={stop}
-            className="text-xs rounded outline-none cursor-pointer"
+            className="text-xs rounded outline-none cursor-pointer flex-shrink-0"
             style={{ background: '#3a1505', border: `1px solid ${colors.border}`, color: '#fdba74', padding: '1px 4px' }}
           >
             {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -102,6 +113,19 @@ function OpRow({ nodeId, op, columns, onUpdate, onDelete, stop, isTrackedAttr })
         </>
       )}
 
+      {op.type === 'drop_column' && (
+        <ColumnSelect
+          value={op.args.col ?? ''}
+          onChange={(val) => onUpdate(nodeId, op.id, 'col', val)}
+          columns={columns}
+          placeholder="— column —"
+          emptyPlaceholder="column"
+          selectStyle={{ ...colSelectStyle, color: '#f87171' }}
+          inputStyle={{ ...colInputStyle, color: '#f87171' }}
+          stop={stop}
+        />
+      )}
+
       <button
         onClick={(e) => { stop(e); onDelete(nodeId, op.id); }}
         onMouseDown={stop}
@@ -116,9 +140,9 @@ function OpRow({ nodeId, op, columns, onUpdate, onDelete, stop, isTrackedAttr })
 
 export default function TransformNode({ id, data }) {
   const {
-    label, ops = [], connectedAttrs = [],
+    label, ops = [], connectedAttrs = [], companionId,
     onLabelChange, onAddTransformOp, onDeleteTransformOp, onUpdateTransformOp,
-    onCodeChange, onStageChange,
+    onCodeChange, onStageChange, onCreateCompanion,
     trackerHighlight, code, stage,
   } = data;
 
@@ -150,7 +174,7 @@ export default function TransformNode({ id, data }) {
         className="px-3 py-2 border-b flex items-center gap-2 cursor-grab active:cursor-grabbing"
         style={{ background: colors.header, borderColor: colors.border }}
       >
-        <span className="font-mono font-bold select-none" style={{ color: colors.handleFill, fontSize: 13 }}>⚙</span>
+        <span className="font-mono font-bold select-none flex-shrink-0" style={{ color: colors.handleFill, fontSize: 13 }}>⚙</span>
         <EditableText
           value={label}
           onChange={(val) => onLabelChange(id, val)}
@@ -167,6 +191,15 @@ export default function TransformNode({ id, data }) {
           style={{ fontSize: 10, color: colors.handleFill, opacity: codeOpen ? 1 : 0.4 }}
         >
           {codeOpen ? '[/]' : '</>'}
+        </button>
+        <button
+          onClick={(e) => { stop(e); if (!companionId) onCreateCompanion(id); }}
+          onMouseDown={stop}
+          title={companionId ? 'Output companion exists' : 'Create output DataFrame'}
+          className="flex-shrink-0 select-none text-xs font-mono transition-colors"
+          style={{ color: companionId ? colors.handleFill : '#7c2d12' }}
+        >
+          {companionId ? '→●' : '→○'}
         </button>
       </div>
 

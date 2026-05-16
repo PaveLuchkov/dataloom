@@ -5,7 +5,20 @@ import EditableText from '../../components/EditableText';
 import StageBadge from '../../components/StageBadge';
 import NodeCodeBlock from '../../components/NodeCodeBlock';
 import { DRAG_TYPE, ATTR_TYPE_META } from '../../constants';
+import { inferAggType } from '../../utils/nodeOutputAttrs';
 import config, { AGG_FUNCTIONS } from './config';
+
+function TypeBadge({ type }) {
+  const meta = ATTR_TYPE_META[type] || ATTR_TYPE_META.string;
+  return (
+    <span
+      className="mr-1 rounded flex-shrink-0 select-none"
+      style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', color: meta.color, background: meta.bg, fontFamily: 'monospace' }}
+    >
+      {meta.abbr}
+    </span>
+  );
+}
 
 const { colors } = config;
 const ROW_HEIGHT = 26;
@@ -77,9 +90,9 @@ export default function GroupByNode({ id, data }) {
 
   // ── Output drag (group-by passthrough + agg outputs) ─────────────────────
 
-  const onOutputDragStart = useCallback((e, outId, outName) => {
+  const onOutputDragStart = useCallback((e, outId, outName, attrType) => {
     e.stopPropagation();
-    const drag = { sourceNodeId: id, attrId: outId, attrName: outName, sourceNodeLabel: label };
+    const drag = { sourceNodeId: id, attrId: outId, attrName: outName, attrType: attrType || 'string', sourceNodeLabel: label };
     dragRef.current = drag;
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(drag));
@@ -232,11 +245,12 @@ export default function GroupByNode({ id, data }) {
                 key={inp.id}
                 draggable
                 onMouseDown={stop}
-                onDragStart={(e) => onOutputDragStart(e, outId, inp.attrName)}
+                onDragStart={(e) => onOutputDragStart(e, outId, inp.attrName, inp.attrType)}
                 onDragEnd={onOutputDragEnd}
                 className="relative flex items-center group hover:bg-sky-900/20 transition-colors cursor-grab active:cursor-grabbing"
                 style={{ paddingLeft: 8, paddingRight: 22, minHeight: ROW_HEIGHT, background: tracked ? 'rgba(245,158,11,0.08)' : undefined }}
               >
+                <TypeBadge type={inp.attrType || 'string'} />
                 <span className="text-xs flex-1 truncate" style={{ color: tracked ? '#fcd34d' : '#7dd3fc', fontWeight: tracked ? 700 : undefined }}>{inp.attrName}</span>
                 <Handle
                   type="source" position={Position.Right} id={`${outId}-source`}
@@ -263,7 +277,9 @@ export default function GroupByNode({ id, data }) {
           {safeAggs.map((agg) => {
             const outId = `aggout-${agg.id}`;
             const outName = agg.outputName || `${agg.func || 'agg'}`;
-            const trackedAgg = isTrackedAttr(outName) || isTrackedAttr(inputOptions.find((inp) => inp.id === agg.inputId)?.attrName);
+            const srcInp = inputOptions.find((inp) => inp.id === agg.inputId);
+            const outType = inferAggType(agg.func, srcInp?.attrType);
+            const trackedAgg = isTrackedAttr(outName) || isTrackedAttr(srcInp?.attrName);
             return (
               <div
                 key={agg.id}
@@ -295,7 +311,8 @@ export default function GroupByNode({ id, data }) {
                   {AGG_FUNCTIONS.map((fn) => <option key={fn} value={fn}>{fn}</option>)}
                 </select>
 
-                {/* Output name */}
+                {/* Output type badge + name */}
+                <TypeBadge type={outType} />
                 <input
                   type="text"
                   value={agg.outputName}
@@ -320,7 +337,7 @@ export default function GroupByNode({ id, data }) {
                 <div
                   draggable
                   onMouseDown={stop}
-                  onDragStart={(e) => onOutputDragStart(e, outId, outName)}
+                  onDragStart={(e) => onOutputDragStart(e, outId, outName, outType)}
                   onDragEnd={onOutputDragEnd}
                   className="absolute cursor-grab active:cursor-grabbing"
                   style={{ right: 6, top: '50%', transform: 'translateY(-50%)' }}

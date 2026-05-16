@@ -2,7 +2,7 @@
 // Used by useLineageState to inject connectedAttrs, leftDF/rightDF,
 // and to drive the result-DF auto-sync.
 
-function inferAggType(func, inputType) {
+export function inferAggType(func, inputType) {
   if (func === 'count' || func === 'nunique') return 'int';
   if (func === 'mean') return 'float';
   if (func === 'sum') return (inputType === 'int' || inputType === 'float') ? inputType : 'float';

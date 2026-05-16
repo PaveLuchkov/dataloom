@@ -75,7 +75,7 @@ export default function FunctionNode({ id, data }) {
 
   const onOutputDragStart = useCallback((e, output) => {
     e.stopPropagation();
-    const drag = { sourceNodeId: id, attrId: output.id, attrName: output.name, sourceNodeLabel: label };
+    const drag = { sourceNodeId: id, attrId: output.id, attrName: output.name, attrType: output.type || 'string', sourceNodeLabel: label };
     dragRef.current = drag;
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(drag));

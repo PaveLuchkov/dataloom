@@ -1,25 +1,25 @@
 {
-  "short_name": "Lineage Editor",
-  "name": "Lineage Editor",
+  "short_name": "DataLoom",
+  "name": "DataLoom",
   "icons": [
     {
-      "src": "favicon.ico",
+      "src": "assets/dataloom.ico",
       "sizes": "64x64 32x32 24x24 16x16",
       "type": "image/x-icon"
     },
     {
-      "src": "logo192.png",
+      "src": "assets/logo200.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "200x200"
     },
     {
-      "src": "logo512.png",
+      "src": "assets/logo400.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "400x400"
     }
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#0f172a",
-  "background_color": "#0f172a"
+  "theme_color": "#14171C",
+  "background_color": "#14171C"
 }

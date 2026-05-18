@@ -21,6 +21,7 @@ as PNG or save it for the next session.
 - Tailwind CSS v3 — utility styles
 - `html-to-image` — PNG export
 - `dagre` — auto-layout
+- `pako` — deflate/inflate for compressed share URLs
 
 ### Dev server
 Running at **http://localhost:3001** (port 3000 was occupied).
@@ -28,18 +29,20 @@ Start with: `PORT=3001 npm start` from `lineage-editor/`.
 
 ### Git history (latest first)
 ```
+b3c5295  feat: broken input state for GroupBy and FunctionNode
+45f43d0  feat: break specific columns when source DF is deleted
+ea7f96b  fix: generalize broken-column detection to edge-based, not companion-based
+6584843  feat: broken column state — orphan companions on operator delete
+c7360e8  feat: add_column op in Transform + FunctionNode extend mode
+602bcbb  feat: resizable CommentNode via NodeResizer
+df139d3  feat: demo canvas on first run (e-commerce order pipeline)
+41578f4  feat: clipboard copy/paste + URL share link
+5526d7c  handoff (previous session end)
 7205eb6  fix: live-sync attrType in GroupBy/FunctionNode inputs from upstream
 fbe6777  fix + feat: GroupBy tracing via sourceNodeId; MergeNode editable label
 03813cb  feat: FunctionNode output→input linking for lineage tracing
 4fe621a  fix + feat: TransformNode/RenameNode overhaul + pass-through fixes
 c92e40d  feat: companion DF pattern + column lineage tracing
-d8bd62f  Этап 3: улучшенный поиск по всему графу
-2f981c2  Этап 2: типы колонок в UI GroupByNode и FunctionNode
-a8d8ce6  Этап 1: единый источник истины для колонок нод
-ba9b4c5  Исправлены иконки в тулбаре и исправлены цвета навазния колонок в function
-49d76c6  Fix tracker search for merge node output columns
-5ad4d88  Fix ESLint unused vars blocking Vercel build
-c4d4069  Add RenameNode, TransformNode, ConcatNode; stage badges, code snippets, column edges, tracker highlights
 ```
 
 ---
@@ -53,23 +56,23 @@ src/
 │   │                                getMinimapColor, ADDABLE_NODES, getDagre*, getNodeDisplayName
 │   ├── dataframe/
 │   │   ├── index.jsx             ← DataFrameNode component
-│   │   │                            (companion badge ⊙, read-only mode, per-row ◎ trace button)
+│   │   │                            (companion badge ⊙, broken column rendering, per-row ◎ trace)
 │   │   ├── config.js             ← colors, dagreWidth/Height, make(), makeCompanion(), menu, connections
 │   │   └── callbacks.js          ← useDataFrameCallbacks(setNodes, setEdges, pushHistory)
 │   ├── merge/
-│   │   ├── index.jsx             ← MergeNode (config-only: join type + key pairs; companion button →●/→○)
+│   │   ├── index.jsx             ← MergeNode (editable label, join type + key pairs; companion button)
 │   │   ├── config.js
 │   │   └── callbacks.js          ← useMergeCallbacks(setNodes, pushHistory)
 │   ├── function/
-│   │   ├── index.jsx             ← FunctionNode (companion button →●/→○)
+│   │   ├── index.jsx             ← FunctionNode (extend mode ⊕, companion button →●/→○, broken inputs)
 │   │   ├── config.js
-│   │   └── callbacks.js          ← useFunctionCallbacks(setNodes, setEdges, pushHistory)
+│   │   └── callbacks.js          ← useFunctionCallbacks (incl. onFunctionExtendModeChange)
 │   ├── filter/
 │   │   ├── index.jsx             ← FilterNode component
-│   │   ├── config.js             ← amber/orange colors; connections: [] (universal rule)
+│   │   ├── config.js
 │   │   └── callbacks.js          ← useFilterCallbacks(setNodes, pushHistory)
 │   ├── groupby/
-│   │   ├── index.jsx             ← GroupByNode (companion button →●/→○)
+│   │   ├── index.jsx             ← GroupByNode (companion button, broken input rendering)
 │   │   ├── config.js             ← sky/cyan colors; connections: [] (universal rule)
 │   │   └── callbacks.js          ← useGroupByCallbacks(setNodes, setEdges, pushHistory)
 │   ├── rename/
@@ -77,27 +80,35 @@ src/
 │   │   ├── config.js
 │   │   └── callbacks.js          ← useRenameCallbacks(setNodes, pushHistory)
 │   ├── transform/
-│   │   ├── index.jsx             ← TransformNode component
-│   │   ├── config.js
+│   │   ├── index.jsx             ← TransformNode (add_column op)
+│   │   ├── config.js             ← TRANSFORM_OPS includes 'add_column'
 │   │   └── callbacks.js          ← useTransformCallbacks(setNodes, pushHistory)
 │   ├── concat/
 │   │   ├── index.jsx             ← ConcatNode component
 │   │   ├── config.js
 │   │   └── callbacks.js          ← useConcatCallbacks()
 │   └── comment/
-│       ├── index.jsx             ← CommentNode component
+│       ├── index.jsx             ← CommentNode (resizable via NodeResizer; @ref highlight)
 │       ├── config.js             ← NOTE_PALETTE (5 sticky-note colors); no connections
 │       └── callbacks.js          ← useCommentCallbacks(setNodes, pushHistory)
 ├── utils/
 │   ├── uid.js                    ← shared ID counter (Date.now() seed)
 │   ├── nodeOutputAttrs.js        ← SINGLE SOURCE OF TRUTH for column output per node type:
 │   │                                computeNodeOutputAttributes(node, edges, nodes) → Attr[]
+│   │                                  functionNode: if extendMode, prepends source DF attrs
+│   │                                  transformNode: handles add_column op (appends new attr)
 │   │                                getUpstreamAttrs(nodeId, edges, nodes, handleId?) → Attr[]
 │   │                                inferAggType(func, inputType) → type string
 │   │                                traceColumnUpstream(nodeId, colName, edges, nodes) → chain | null
+│   │                                  functionNode: if extendMode + col not in outputs, passes through df-in
+│   │                                  transformNode: add_column → createdHere: true
 │   │                                traceColumnDownstream(nodeId, colName, edges, nodes) → branch[]
 │   │                                flattenUpstream(step) → step[] (oldest → newest)
 │   └── exportSql.js              ← SQL generation from graph
+├── data/
+│   └── demoCanvas.json           ← built-in first-run demo: full e-commerce pipeline
+│                                    (orders_raw + customers → Filter → Transform → Rename
+│                                     → Merge → GroupBy + FunctionNode, two CommentNodes)
 ├── components/
 │   ├── AttributeTrackerPanel.jsx ← Track overlay (Ctrl+Shift+F): input + suggestions dropdown
 │   ├── ColumnEdge.jsx            ← custom edge type showing column name on hover
@@ -119,42 +130,38 @@ src/
 │   ├── useAutoLayout.js          ← dagre LR layout; sizes come from registry
 │   ├── useCanvasTabs.js          ← multi-canvas tab state; each tab saved to its own localStorage key
 │   ├── useContextMenu.js         ← menu state + onPaneContextMenu / onNodeContextMenu
-│   ├── useLineagePersistence.js  ← save / load localStorage, export PNG, save/load JSON file
+│   ├── useLineagePersistence.js  ← save/load localStorage, export PNG, save/load JSON,
+│   │                                copyToClipboard / pasteFromClipboard (Ctrl+Shift+C/V),
+│   │                                copyShareUrl (pako deflate → base64url → URL hash),
+│   │                                loadFromUrlHash (inflate on mount)
 │   └── useLineageState.js        ← state + history; composes per-type callback hooks;
-│                                    addNodeOfType(type, x, y) uses registry config.make();
 │                                    COMPANION_TYPES = mergeNode | groupByNode | functionNode
 │                                      | renameNode | transformNode;
 │                                    addNodeOfType auto-creates companion DF for operator types;
-│                                    deleteNode and keyboard Delete cascade to companion DF;
-│                                    onCreateCompanion: manual companion creation callback;
-│                                    makeCompanionEdge: dashed slate edge (data.isCompanionEdge: true);
-│                                    useEffect clears stale companionId when companion deleted;
-│                                    companion-only sync useEffect: only DFs with _companionOf
-│                                      have their attributes driven by computeNodeOutputAttributes
-│                                      (regular downstream DFs are NOT overwritten);
-│                                    attrType live-sync useEffect: GroupByNode + FunctionNode
-│                                      inputs have attrType refreshed from sourceNodeId on every
-│                                      graph change; FunctionNode linked outputs refreshed too;
-│                                    connectedAttrs injected via getUpstreamAttrs for
-│                                      FilterNode/RenameNode/TransformNode;
-│                                    leftDF/rightDF injected via computeNodeOutputAttributes
-│                                      for MergeNode (works for chained merges)
+│                                    DELETE KEY — broken column logic:
+│                                      operator deleted → all columns of connected df-out DFs broken;
+│                                      DF deleted → specific attrs wired via column edges broken;
+│                                      any node deleted → GroupBy/Function inputs with matching
+│                                        sourceNodeId marked broken;
+│                                    auto-heal useEffect: DFs with broken attrs scan upstream;
+│                                      name match → broken cleared, type updated from live upstream;
+│                                    attrType live-sync useEffect: GroupBy + FunctionNode inputs
+│                                      refreshed from sourceNodeId on every graph change;
+│                                    companion sync useEffect: only _companionOf DFs overwritten
 ├── constants.js                  ← DRAG_TYPE, STORAGE_KEY, TABS_KEY, ACTIVE_TAB_KEY, canvasKey(),
 │                                    JOIN_TYPES, JOIN_ACTIVE_STYLES,
 │                                    ATTR_TYPES, ATTR_TYPE_META  (no per-node colors/sizes)
-├── App.jsx                       ← UI shell: imports nodeTypes/isValidConnection/getMinimapColor
-│                                    from registry; passes addableNodes to Toolbar + ContextMenu;
+├── App.jsx                       ← UI shell; on mount: loadFromUrlHash() → else first-run demo
+│                                    (localStorage 'lineage-demo-loaded' flag, loads demoCanvas.json);
+│                                    Ctrl+Shift+C / Ctrl+Shift+V shortcuts wired here;
 │                                    owns traceState (nodeId + colName + nodeType + nodeLabel);
-│                                    onTraceColumn toggles traceState (same click = close);
-│                                    traceResult = { upstream: chain, downstream: branches[] };
-│                                    tracePathNodeIds / tracePathEdgeIds computed as Sets;
-│                                    Escape key closes trace mode first, then other panels;
-│                                    trackedNodes: trace mode takes priority over keyword tracker
-│                                      (cyan glow for current, blue outline for path, 10% for off-path);
-│                                    displayEdges: path edges animate cyan at 2.5px, off-path dims to 4%;
-│                                    AttributeTrackerPanel hidden while trace mode is active;
-│                                    renders <TracePanel> when traceState is set
-└── Toolbar.jsx                   ← add-node buttons rendered from ADDABLE_NODES
+│                                    traceResult, tracePathNodeIds, tracePathEdgeIds (Sets);
+│                                    trackedNodes: trace mode → cyan/blue/dim; else keyword tracker;
+│                                    displayEdges: path edges animate cyan, off-path dims to 4%
+└── Toolbar.jsx                   ← add-node buttons, copy/paste/share buttons (IcoCopy/IcoPaste/IcoShare)
+public/
+└── index.html                    ← inline <script> before </head> suppresses ResizeObserver loop
+                                     error before CRA's overlay handler registers
 ```
 
 ---
@@ -164,162 +171,72 @@ src/
 ### DataFrameNode
 - Double-click title or any column name → inline edit (Enter/Escape)
 - `+` button in header → add column (**hidden on companion DFs**)
-- Hover column → `×` appears → delete column (**hidden on companion DFs**)
+- **Broken column state**: `attr.broken = true` renders red background, strikethrough name, `!` marker, always-visible `×` button; **auto-heals** when upstream with matching name is reconnected (type also updated from live upstream)
 - Hover column → grip icon `⠿` → **drag within same node** to reorder
-  - Blue insert-line indicator shows drop position
-- **Drag column onto a different DataFrame** → column is copied there + lineage edge created automatically; type is preserved
+- **Drag column onto a different DataFrame** → column copied + lineage edge created automatically
 - Per-column handles: left dot (target) + right dot (source) for manual edge drawing
-- Two teal square handles at top corners:
-  - `df-in` (top-left) — receives any `df-out` connection
-  - `df-out` (top-right) — sends to any node's `df-in`, or to `left-in`/`right-in` on MergeNode
-- **Type badge** (`str`/`int`/`flt`/`dat`/`bool`) before each column name — click to cycle type (**disabled on companion DFs**)
-- **Auto-synced**: if a DataFrameNode is connected via `df-in` to any operator node, its columns are automatically overwritten by `computeNodeOutputAttributes` of the upstream node
-- **Companion badge `⊙`**: shown in header when `data._companionOf` is set — marks the node as an operator output
-- **Trace button `◎`**: per-column, visible on hover — calls `onTraceColumn(nodeId, colName)` to open the trace panel
-- **Trace highlight**: active traced column row gets `rgba(6,182,212,0.12)` background + cyan bold text
+- Two square handles: `df-in` (top-left), `df-out` (top-right)
+- **Type badge** (`str`/`int`/`flt`/`dat`/`bool`) — click to cycle type (**disabled on companion DFs and broken cols**)
+- **Companion badge `⊙`**: shown when `data._companionOf` is set; cleared when operator is deleted
+- **Trace button `◎`**: per-column on hover — hidden for broken columns
 
 ### FunctionNode
-- Drop columns from any node onto the Inputs panel → creates input entry + edge
-- **Drag `df-out` handle from any node → `df-in` on FunctionNode** → adds the whole DataFrame as a named input group
-- Add/delete/rename output columns; each output has explicit type (clickable to cycle)
-- **Output → Input linking**: each output row has a compact select (`∅ new` or pick from inputs). When linked, output name and type auto-fill from the chosen input. Tracing follows through to the source DataFrame instead of stopping with `createdHere`. Renaming the output after linking is allowed and tracing still follows the link.
-- **Companion button `→●` / `→○`** in header — click `→○` to create a companion output DF; grays out to `→●` when one exists
-- Two square handles at top corners: `df-in` (top-left), `df-out` (top-right)
-- `attrType` on each input is **live-synced** from upstream — if an upstream TransformNode changes a column's type, all FunctionNode inputs referencing that column automatically pick up the new type; linked outputs are updated too
+- Drop columns onto Inputs panel → creates input entry + edge
+- Drag `df-out` → `df-in` on FunctionNode → adds whole DataFrame as named input group
+- **Broken input state**: `inp.broken = true` when source node deleted → red row, `!` marker replaces TypeBadge, red handle dot, always-visible `×`; user re-drags to replace
+- **Output → Input linking**: compact select per output row (`∅ new` or pick from inputs); linked output name+type auto-fill; tracing follows through
+- **Extend mode `⊕`** button in header (active only when `df-in` connected):
+  - OFF (default): companion DF contains only function outputs
+  - ON: companion DF = all source DF columns + function outputs (no duplicates); models `df['col'] = func(...)`; pass-through columns trace transparently through the function
+  - `data.extendMode` flag stored on node; `computeNodeOutputAttributes` prepends upstream attrs when true
+- **Companion button `→●` / `→○`**
+- `attrType` on inputs is live-synced from upstream; linked outputs updated in same pass
+
+### TransformNode
+- **`add_column` op**: new column name (text) + type selector + constant value; column appended to output schema; traces as `createdHere: true` (no upstream); companion DF auto-reflects it
+- **`drop_column`, `astype`, `fillna`, `sort_values`, `dropna`, `drop_duplicates`** — existing ops
+- **Companion button `→●` / `→○`**; auto-spawns companion on placement
 
 ### MergeNode
-- Created by: select exactly 2 nodes → toolbar **⋈ Merge** button (or right-click canvas)
-- Auto-wires: left node `df-out → left-in`, right node `df-out → right-in`
 - **Editable label** via `EditableText` in header (default: `merge`)
-- **Companion output DF** auto-created on merge (label `merge_result`) with dashed companion edge
-- **Companion button `→●` / `→○`** in header — create additional companion manually
-- Join type toggle: `inner` / `left` / `right` / `outer` (color-coded)
-- Key pairs editor: add/remove `left_col = right_col` pairs with dropdowns
-- Output panel removed — output columns live in the companion DF, driven by result-DF sync
-- Square handle: `df-out` (top-right) — source for companion + downstream connections
+- Auto-wires left/right df-out on creation from 2 selected nodes
+- Join type toggle: `inner` / `left` / `right` / `outer`
+- Key pairs editor
+- **Companion button `→●` / `→○`**
 
-### GroupByNode (sky/cyan)
-- Square handles at top corners: `df-in` (top-left), `df-out` (top-right) — universal DF-level connections
-- **Left panel (Inputs)**: drop zone; toggle `⊞` / `○` per input to mark as group-by key
-- **Right panel (Outputs)**: group-by keys + aggregation outputs with TypeBadge and source handles
-- **Companion button `→●` / `→○`** in header
-- Auto-spawns companion DF when placed from toolbar
-- `attrType` on each input is **live-synced** from upstream — upstream type changes (e.g. TransformNode `astype`) propagate automatically; `inferAggType` for agg outputs uses the refreshed type
+### GroupByNode
+- **Broken input state**: same as FunctionNode — `inp.broken` renders red with `!`, always-visible `×`; toggle `⊞` hidden for broken inputs
+- Left panel (Inputs): drop zone; toggle `⊞` / `○` to mark group-by key
+- Right panel (Outputs): group-by keys + aggregation rows
+- **Companion button `→●` / `→○`**
+- `attrType` live-synced from upstream
 
-### FilterNode (amber/orange)
-- Square handles at top corners: `df-in` (left), `df-out` (right)
-- **Multi-condition WHERE builder** with `HighlightedConditionInput` (see below)
-- `connectedAttrs` injected via `getUpstreamAttrs`
+### CommentNode
+- **Resizable**: `NodeResizer` from reactflow — drag corners/edges to resize; handles only visible when node selected
+- 5 palette colors, textarea body, `@ref` highlighting
+- `style.width`/`style.height` persisted on node for React Flow resize sync
 
-### RenameNode (indigo)
-- Square handles at top corners: `df-in` (left), `df-out` (right)
-- Rows of `old_name → new_name` mappings; source column type preserved in output
-- **Pass-through**: upstream columns with no mapping appear unchanged in the output — only explicitly mapped columns are renamed
-- **Companion button `→●` / `→○`** in header; auto-spawns companion DF when placed from toolbar
-- Companion DF shows all upstream columns with renamed ones reflected
+### FilterNode
+- Multi-condition WHERE builder with `@column` autocomplete
+- `connectedAttrs` injected from upstream
 
-### TransformNode (orange)
-- Square handles at top corners: `df-in` (left), `df-out` (right)
-- **Pass-through transformer**: derives output schema from upstream, not from a stored list
-- Operations list (`ops[]`) — two categories:
-  - **Row-level** (no schema change): `drop_duplicates`, `dropna`, `sort_values`
-  - **Schema-level** (mutates output columns):
-    - `astype` — changes the type of a specific column (column selector + type selector); companion DF reflects the new type
-    - `fillna` — fills nulls in a specific column (optional column selector + fill value); no schema change
-    - `drop_column` — removes a specific column from the output schema; companion DF won't have it; tracing returns null for that column
-- **Companion button `→●` / `→○`** in header; auto-spawns companion DF when placed from toolbar
-- `connectedAttrs` injected from upstream for column selectors in op rows
+### RenameNode
+- Rows of `old_name → new_name` mappings; pass-through for unmapped columns
+- **Companion button**; auto-spawns companion
 
-### ConcatNode
-- Square handles; pass-through: output = union of all upstream inputs
+### Clipboard / Share
+- **`Ctrl+Shift+C`** — copy full canvas JSON to clipboard
+- **`Ctrl+Shift+V`** — paste canvas from clipboard (replaces current)
+- **Share link button** in Toolbar — pako deflate + base64url → URL hash; anyone opening the URL loads the canvas. ~40 KB JSON → ~3–5 KB URL
+- On mount: `loadFromUrlHash()` checked first; if no hash and `lineage-demo-loaded` absent in localStorage → load demo canvas once
 
-### CommentNode (sticky note)
-- No handles — canvas decoration only
-- 5 palette colors, textarea body
-
-### Result-DF column sync
-Only **companion DFs** (those with `data._companionOf` set) have their attributes auto-driven by `computeNodeOutputAttributes` of the upstream operator. Implemented as a `useEffect` watching `nodes + edges`. `JSON.stringify` comparison prevents infinite loops. Regular DataFrames connected downstream of any operator are **not** overwritten — the user can freely edit them.
-
-### Companion DF pattern
-Operator nodes (mergeNode, groupByNode, functionNode, renameNode, transformNode) automatically spawn a paired DataFrameNode to their right when created. This companion DF:
-- Has `data._companionOf = operatorNodeId` — marks it as auto-managed
-- Is connected via a **dashed slate companion edge** (`data.isCompanionEdge: true`, stroke `#334155`, `strokeDasharray: '5 4'`)
-- Gets its columns driven by result-DF sync (the operator's `computeNodeOutputAttributes`)
-- Is **read-only** in the UI: no add/delete column, no type-cycle, no name edit
-- Is **cascade-deleted** when its operator is deleted (via `deleteNode` and keyboard Delete)
-- Stale `companionId` on the operator is cleared by a `useEffect` if companion is manually deleted
-- Operators show `→●` / `→○` companion button; `→○` triggers `onCreateCompanion`
-
-### Column Lineage Tracing
-- Click `◎` on any column row in a DataFrameNode → opens **TracePanel** (right-side overlay)
-- Click the same column again → closes trace panel
-- **Escape key** closes trace mode (priority over other panels)
-- **TracePanel** shows three sections:
-  - `↑ origin` — upstream ancestor chain (oldest → parent of current)
-  - `◉ here` — the node where trace was clicked
-  - `↓ flows to` — branching downstream tree
-- Each step shows node icon (per type), node label, column name, agg info, `← created here` marker
-- **Click any step** → `fitView` to that node with animation
-- **Canvas effects during trace**:
-  - Current node: cyan glow `0 0 0 2px #06b6d4`
-  - Other path nodes: blue outline `0 0 0 2px #1e4d8c`
-  - Off-path nodes: 10% opacity
-  - Path edges: animated cyan `#06b6d4`, 2.5px
-  - Off-path edges: 4% opacity
-- AttributeTrackerPanel is hidden while trace is active
-- Tracing traverses **through companion DFs** — a companion DF looks for an incoming `df-in` edge and continues upstream through the operator
-
-### Canvas Tabs (Stages)
-- **Tab bar** at the bottom — add, rename (double-click), close tabs
-- Each tab is an independent canvas stored under `canvasKey(tabId)` in localStorage
-- First load migrates old single-canvas `STORAGE_KEY` into tab 1
-
-### Canvas
-- Pan + zoom; `minZoom: 0.05` / `maxZoom: 2`
-- Right-click canvas → add menu + "⋈ Merge selected" (when 2 nodes selected)
-- Right-click node → "Delete …"
-- Select nodes + Delete → removes nodes + edges + cascade companion DFs
-
-### Copy / Paste
-- `Ctrl+C` / `Cmd+C` — copies selected nodes; `Ctrl+D` / `Cmd+D` — pastes with `+40px × pasteCount` offset
-- Pasted operators have `companionId: undefined` stripped (no dangling reference to original's companion)
-
-### Undo / Redo
-- `Ctrl+Z` / `Cmd+Z` — undo; `Ctrl+Y` / `Ctrl+Shift+Z` — redo
-- Also toolbar buttons ↩ / ↪
-- Max 50 snapshots; refs-based (no re-renders)
-
-### Auto-layout
-- **⬦ Auto-arrange** toolbar button — runs dagre LR, then `fitView`
-
-### Search (`Cmd+K`)
-- Searches all node types via `_outputAttrs` pre-computed from `computeNodeOutputAttributes`
-- Results: node name matches + `node › column` with type badge
-- Arrow keys navigate, Escape closes
-
-### Attribute Tracker (`Ctrl+Shift+F`)
-- Floating panel — amber theme; `W=` exact match toggle
-- Matched nodes glow amber, unmatched fade to 12%
-- Attribute-level highlight within DataFrameNode rows
-- **Hidden when trace mode is active** (trace takes visual priority)
-
-### Column Edges
-- Custom edge type `columnEdge` for column-level lineage
-- `displayEdges` in App.jsx resolves column name from `sourceHandle` for all node types
-
-### SQL Export / Import
-- Export: walks graph → `SELECT … FROM … JOIN … WHERE … GROUP BY`
-- Import: paste `SELECT` statement → auto-creates DataFrameNode with columns
-
-### Keyboard Shortcuts
-- `?` → ShortcutsModal
-- `D` → add DataFrameNode, `F` → FilterNode, `E` → FunctionNode, `G` → GroupByNode, `C` → CommentNode
-- `L` → auto-layout, `M` → merge 2 selected
-- `Esc` → close trace panel first, then other panels
-
-### Persistence
-- `Ctrl+S` / `Ctrl+O` → save/load JSON file; localStorage per-tab
-- Export PNG → `html-to-image`, 3× pixel ratio
+### Demo Canvas (first run)
+- `src/data/demoCanvas.json` — e-commerce order pipeline:
+  - `orders_raw` + `customers` → `Filter (completed_only)` → `Transform (clean_orders)` → `Rename (normalize_customers)` → `Merge (enrich_orders)` → `GroupBy (revenue_by_segment)` + `FunctionNode (compute_ltv)`
+  - All node types represented; per-column edges for GroupBy/Function inputs; companion edges
+  - Two CommentNodes (blue intro with shortcuts, green analysis explanation)
+- Loaded exactly once per browser (localStorage flag `lineage-demo-loaded`); clear flag to reset
+- To update: edit `demoCanvas.json` and bump the flag
 
 ---
 
@@ -327,18 +244,61 @@ Operator nodes (mergeNode, groupByNode, functionNode, renameNode, transformNode)
 
 ### Column / Attribute Data Model
 
-Every column: `{ id: string, name: string, type: string }` where `type ∈ 'string' | 'int' | 'float' | 'date' | 'bool'`
+Every column: `{ id, name, type, broken? }` where `type ∈ 'string' | 'int' | 'float' | 'date' | 'bool'`  
+`broken: true` is a transient UI flag — does not affect `computeNodeOutputAttributes`, only rendering.
+
+GroupBy/FunctionNode inputs: `{ id, attrName, attrType, sourceNodeId, sourceNodeLabel, sourceAttrId, broken? }`
 
 | Node | Stored fields | Source of truth for output |
 |---|---|---|
 | DataFrameNode | `attributes[]` | `attributes` directly |
-| FunctionNode | `inputs[]` (attrType — live-synced), `outputs[]` (type; `fromInputId` for linked) | `outputs`; linked outputs re-derive type from live input |
-| GroupByNode | `inputs[]` (attrType — live-synced), `groupByInputIds`, `aggregations[]` | keys from inputs + agg outputs via `inferAggType` (uses live attrType) |
+| FunctionNode | `inputs[]`, `outputs[]` (type; `fromInputId`); `extendMode` | `outputs`; if `extendMode`: upstream attrs + outputs |
+| GroupByNode | `inputs[]`, `groupByInputIds`, `aggregations[]` | keys from inputs + agg outputs via `inferAggType` |
 | MergeNode | nothing — computed | union of left + right node outputs |
 | FilterNode | nothing — computed | pass-through of upstream |
-| RenameNode | `mappings[]` (from/to names) | upstream columns with mapped ones renamed; unmapped pass through |
-| TransformNode | `ops[]` (type, args) | upstream columns filtered by `drop_column`, types mutated by `astype` |
+| RenameNode | `mappings[]` | upstream columns with mapped ones renamed |
+| TransformNode | `ops[]` | upstream columns + `add_column` appended; `drop_column` removed; `astype` type-mutated |
 | ConcatNode | nothing — computed | union of all upstream |
+
+### Broken Column Mechanics
+
+Triggered in the Delete key handler in `useLineageState`:
+
+```
+Node deleted                         → what breaks
+────────────────────────────────────────────────────────
+Operator (non-DF)                    → ALL attrs of any DF connected via df-out broken
+DataFrame                            → specific attrs in other DFs wired via column-level edges broken
+Any node                             → GroupBy/Function inputs with sourceNodeId === deleted.id broken
+```
+
+Operator's companion DF: `_companionOf` cleared if its operator is in the delete set.  
+Non-companion DFs connected to deleted operator: `_companionOf` untouched (may be undefined already).
+
+**Auto-heal useEffect** (runs on every `nodes`/`edges` change):
+```js
+// For each DF with broken attrs: getUpstreamAttrs(n.id, edges, nodes)
+// If upstream has attr.name === broken.name → broken: false, type updated from upstream
+```
+No auto-heal for GroupBy/Function inputs — user must re-drag a replacement column.
+
+### FunctionNode Extend Mode
+
+`data.extendMode: boolean` stored on the node.
+
+`computeNodeOutputAttributes` for `functionNode`:
+```js
+if (!node.data.extendMode) return ownOutputs;
+const sourceAttrs = getUpstreamAttrs(node.id, edges, nodes);  // via df-in
+const ownNames = new Set(ownOutputs.map(o => o.name));
+return [...sourceAttrs.filter(a => !ownNames.has(a.name)), ...ownOutputs];
+```
+
+`traceColumnUpstream` for `functionNode`:
+- Column in `outputs` → traces through `fromInputId` or returns `createdHere`
+- Column NOT in outputs + `extendMode` → passes through df-in edges to upstream (transparent pass-through)
+
+`_propagateCol` for downstream tracing uses `computeNodeOutputAttributes` directly (handles both modes).
 
 ### Companion DF storage
 
@@ -347,10 +307,19 @@ Every column: `{ id: string, name: string, type: string }` where `type ∈ 'stri
 | `data._companionOf` | DataFrameNode | ID of the operator that owns this companion |
 | `data.companionId` | Operator node | ID of its companion DataFrameNode |
 | `data.isCompanionEdge` | Edge | Marks the dashed operator→companion connection |
+| `attr.broken` | DataFrameNode attribute | Transient: source lost; heals on reconnect |
+| `inp.broken` | GroupBy/Function input | Transient: source node deleted; user re-drags |
 
-`COMPANION_TYPES = new Set(['mergeNode', 'groupByNode', 'functionNode', 'renameNode', 'transformNode'])` — checked in `addNodeOfType` and `deleteNode`.
+`COMPANION_TYPES = new Set(['mergeNode', 'groupByNode', 'functionNode', 'renameNode', 'transformNode'])`
 
-`dataframeConfig.makeCompanion(id, companionOf, x, y, attributes, label)` — factory for companion DF nodes.
+### Share URL encoding (`useLineagePersistence`)
+```js
+encodeState(nodes, edges):
+  JSON.stringify → pako.deflate → Uint8Array → base64url → window.location.hash
+
+decodeState(hash):
+  base64url → Uint8Array → pako.inflate → JSON.parse → { nodes, edges }
+```
 
 ### Column Lineage Tracing — `nodeOutputAttrs.js`
 
@@ -361,98 +330,27 @@ traceColumnUpstream(nodeId, colName, edges, nodes)
 
 Extras per node type:
 - `groupByNode` agg: `aggFunc`, `inputColName`
-- `functionNode`: `createdHere: true` (only when output has no `fromInputId` link)
+- `functionNode` own output (no link): `createdHere: true`
+- `transformNode` add_column: `createdHere: true`
 
-**Critical**: `dataFrameNode` case is NOT terminal — it looks for an incoming `df-in → df-out` edge and traces through the upstream operator. This is what allows tracing through companion DFs:
-```
-source_df → [df-out] → mergeNode → [df-out] → companion_df → [df-out] → groupByNode → [df-out] → companion_df
-```
+**`dataFrameNode` case is NOT terminal** — traces through incoming `df-in → df-out` edge to upstream operator.
 
-```js
-traceColumnDownstream(nodeId, colName, edges, nodes)
-  → [{ nodeId, colName, nodeType, nodeLabel, downstream: [...] }]
-```
+`_propagateCol` for downstream tracing uses `computeNodeOutputAttributes` for `functionNode` (handles extend mode correctly).
 
-Uses `_propagateCol(targetNode, colName, edges, nodes) → newColName | null`:
-- `renameNode`: maps `from → to` if mapping exists; otherwise pass-through
-- `groupByNode`: key passthrough or agg input → outputName
-- `filterNode`, `concatNode`, `transformNode`: pass-through if column present in output (drop_column returns null for dropped cols)
-- `functionNode`: checks `outputs[]` for colName (fixed — was incorrectly checking `inputs[]`)
-- `dataFrameNode`, `mergeNode`: checks `computeNodeOutputAttributes` for presence
+### `computeNodeOutputAttributes` key changes
 
-```js
-flattenUpstream(step) → step[]   // [oldest … current]
-```
-
-### How trace affects rendering
-
-In App.jsx:
-1. `traceState: { nodeId, colName, nodeType, nodeLabel }` — what's being traced
-2. `traceResult: { upstream, downstream }` — full trace tree
-3. `tracePathNodeIds: Set<string>` — all node IDs on the path (upstream chain + downstream recursion)
-4. `tracePathEdgeIds: Set<string>` — all edge IDs between path nodes
-5. `trackedNodes` memo: if `tracePathNodeIds` set, applies cyan/blue/dim styling; otherwise falls through to keyword tracker logic
-6. `displayEdges` memo: if `tracePathEdgeIds` set, animates path edges cyan and dims off-path to 4%
-7. `onTraceColumn` is injected into every node's `data` via `trackedNodes` memo; DataFrameNode reads it from `data`
-
-### `computeNodeOutputAttributes` — single source of truth
-
-`src/utils/nodeOutputAttrs.js` exports:
-```js
-computeNodeOutputAttributes(node, edges, nodes) → { id, name, type }[]
-getUpstreamAttrs(nodeId, edges, nodes, handleId?) → { id, name, type }[]
-inferAggType(func, inputType) → string
-traceColumnUpstream(nodeId, colName, edges, nodes) → step | null
-traceColumnDownstream(nodeId, colName, edges, nodes) → step[]
-flattenUpstream(step) → step[]
-```
+- **`functionNode`**: if `extendMode`, returns `[...sourceAttrs (not in outputs), ...ownOutputs]`
+- **`transformNode`**: collects `add_column` ops and appends `{ id: op.id, name: op.args.col, type: op.args.type_val }` after upstream, skipping names already in upstream
 
 ### How `nodesWithCallbacks` enriches nodes
 
 | Node type | Injected field | Source |
 |---|---|---|
-| `functionNode`, `concatNode` | `connectedDFs` | edges with `targetHandle === 'df-in'`; outputs carry `fromInputId` for tracing |
+| `functionNode`, `concatNode` | `connectedDFs` | edges with `targetHandle === 'df-in'` |
 | `filterNode`, `renameNode`, `transformNode` | `connectedAttrs` | `getUpstreamAttrs(n.id, edges, nodes)` |
 | `mergeNode` | `leftDF`, `rightDF` | `computeNodeOutputAttributes` of L/R source nodes |
-| all nodes | `onTraceColumn`, `traceColName` | injected in App.jsx `trackedNodes` memo (after `nodesWithCallbacks`) |
+| all nodes | `onTraceColumn`, `traceColName` | injected in App.jsx `trackedNodes` memo |
 | all nodes | all callbacks | `callbacks.current` ref via `attachCallbacks` |
-
-**Ordering constraint**: `callbacks.current = { ... }` must be assigned AFTER all `useCallback` definitions that it references (ESLint no-use-before-define applies to `useCallback` in the same scope).
-
-### Result-DF auto-sync
-
-A `useEffect` in `useLineageState` runs on every `nodes`/`edges` change, but **only for companion DFs** (`n.data._companionOf` must be set):
-```js
-if (n.type !== 'dataFrameNode' || !n.data._companionOf) return n;
-const computed = computeNodeOutputAttributes(src, edges, nodes);
-if (JSON.stringify(n.data.attributes) !== JSON.stringify(computed)) {
-  // overwrite the companion DF's attributes
-}
-```
-
-Regular DataFrames connected downstream of an operator are left untouched. This was the root cause of the TransformNode bug: any DF connected to a TransformNode got overwritten with its empty `attributes: []`, making it impossible to add columns.
-
-### Node Registry pattern
-
-Each node type: `src/nodes/<type>/` with `config.js`, `callbacks.js`, `index.jsx`.  
-`src/nodes/registry.js` assembles: `nodeTypes`, `isValidConnection`, `getMinimapColor`, `getDagre*`, `ADDABLE_NODES`, `getNodeDisplayName`.
-
-### Standard DF-level handles
-
-| Handle | Type | Position | Purpose |
-|---|---|---|---|
-| `df-in` | target | top-left | Receives any `df-out` connection |
-| `df-out` | source | top-right | Sends to any `df-in`, or to `left-in`/`right-in` |
-
-MergeNode additionally has `left-in` (30% top) and `right-in` (70% top).
-
-`isValidConnection` rules:
-```
-Column lineage:   *-source  →  *-target
-Universal DF:     df-out    →  df-in
-DF → Merge L:     df-out    →  left-in
-DF → Merge R:     df-out    →  right-in
-```
 
 ### Adding a new node type (the full recipe)
 1. `src/nodes/<type>/config.js` — define colors, `make()`, `menu`, `connections`
@@ -461,64 +359,48 @@ DF → Merge R:     df-out    →  right-in
 4. One line in `registry.js`: `{ config: myConfig, component: MyNode }`
 5. Import and compose callbacks in `useLineageState.js`
 6. Add case to `computeNodeOutputAttributes` in `nodeOutputAttrs.js`
-7. If node is an operator that produces output columns → add to `COMPANION_TYPES` in `useLineageState.js` to get automatic companion DF spawning
+7. If operator → add to `COMPANION_TYPES` in `useLineageState.js`
 8. Add case to `traceColumnUpstream` and `_propagateCol` in `nodeOutputAttrs.js`
 
 ### Canvas Tabs storage layout
 ```
 localStorage keys:
-  lineage-tabs          → JSON array of { id, name }
-  lineage-active-tab    → active tab id string
-  lineage-canvas-{id}   → { nodes, edges } for each tab
-  lineage-editor-state  → legacy single-canvas key (migrated to tab 1 on first load)
+  lineage-tabs            → JSON array of { id, name }
+  lineage-active-tab      → active tab id string
+  lineage-canvas-{id}     → { nodes, edges } for each tab
+  lineage-demo-loaded     → flag: demo canvas already shown once
 ```
 
 ---
 
 ## What Failed / Dead Ends
 
+### ResizeObserver loop error (CRA dev overlay)
+After adding `NodeResizer` to CommentNode, `ResizeObserver loop completed with undelivered notifications` appeared in the CRA error overlay. First fix: added `window.addEventListener('error', ...)` in `src/index.js`. Didn't work — CRA registers its overlay error handler during bundle initialisation, before `index.js` runs, so `stopImmediatePropagation` had no effect.  
+**Fix**: moved the suppression `<script>` to `public/index.html` before `</head>` — the browser executes it before the bundle, so our listener registers first.
+
+### Companion cascade-delete creating unrecoverable broken chains
+Original delete handler added companion DF id to `toDelete`. When an operator (e.g. Merge) was deleted mid-chain, its companion DF and all downstream nodes lost their source. No way to recover without re-building from scratch.  
+**Fix**: companion DFs are NOT deleted. Instead, all their attributes are marked `broken: true` and `_companionOf` is cleared. Downstream edges from the companion survive. User reconnects a replacement source and matching columns auto-heal.
+
+### Companion-based orphan detection not persisting through reconnection cycles
+The broken state was triggered only for DFs that had `companionId` on the operator being deleted. After reconnecting a new operator to the orphaned DF, the DF had no companion relationship with the new operator. Deleting the new operator again didn't trigger broken state.  
+**Fix**: use edge-based detection — scan ALL `df-out → df-in` edges from the deleted node, mark any target DF as broken. This works regardless of companion status and persists through reconnection cycles.
+
 ### Tailwind v4 install
 `npm install -D tailwindcss postcss autoprefixer` pulled Tailwind v4 which has no `tailwindcss` CLI binary. Fixed by pinning `tailwindcss@3`.
 
-### `App.js` shadowing `App.jsx`
-CRA scaffolded `App.js`. After creating `App.jsx`, the old file took priority. Fixed by deleting `App.js`, `App.css`, `logo.svg`.
-
-### Port conflict
-`npm start` hits port 3000. Must use `PORT=3001 npm start`.
-
-### Attribute drag conflicting with node drag
-Fix: `onMouseDown: e.stopPropagation()` on every draggable attribute row.
-
-### `dataTransfer.getData` blocked during dragover
-Browser blocks `.getData()` during drag. Fixed with `DragContext` ref set at `dragstart`.
-
-### HTML5 drag for DF-level drop on FunctionNode
-Abandoned; added `df-in` Handle to FunctionNode for standard handle-drag.
-
-### TracePanel showing current node twice
-`flattenUpstream(traceResult.upstream)` returns `[…ancestors, current]`. Was slicing incorrectly — current appeared both in the upstream chain AND in the "here" section. Fixed: `upstreamChain = fullChain.slice(0, -1)`, `currentStep = fullChain.at(-1)`.
-
-### traceColumnUpstream stopping at companion DF
-`dataFrameNode` case returned `upstream: null` always — companion DFs never traced through to their operator. Fixed: look for incoming `df-in → df-out` edge on the DF and recursively call `traceColumnUpstream` on the source operator.
-
-### ESLint ordering issues in useLineageState and App.jsx
-- `callbacks.current = { ..., onCreateCompanion }` was placed before the `useCallback` definition → moved after all callbacks
-- `trackedNodes` useMemo referenced `traceState` / `tracePathNodeIds` / `onTraceColumn` before they were declared → moved the entire trace block before `trackedNodes` in App.jsx
-
-### TransformNode sync bug (result-DF overwrite)
-Any DataFrame connected downstream of a TransformNode had its columns replaced with `[]` (TransformNode's empty `attributes` array) by the result-DF sync useEffect. Fix: restrict sync to companion DFs only (`_companionOf` check).
-
-### RenameNode dropping pass-through columns
-`computeNodeOutputAttributes` for renameNode only returned columns with a complete `from → to` mapping — all other upstream columns were silently dropped. Fix: map the upstream columns through the mappings, pass unmapped ones through unchanged. Same fix applied to `traceColumnUpstream` which returned `null` for any column not in the mappings.
-
-### GroupBy/FunctionNode tracing via df-in edges (wrong)
-`traceColumnUpstream` for groupByNode searched for `df-in` edges to find the upstream node, but GroupBy/Function inputs connect via per-column handles `${inp.id}-target`. The `inp.sourceNodeId` is already stored in each input record — fixed to use it directly (no edge search needed). Same pattern used for FunctionNode.
+### GroupBy/FunctionNode frozen attrType (type inheritance bug)
+GroupByNode and FunctionNode stored `attrType` frozen at drag time. When an upstream TransformNode executed `astype`, downstream nodes didn't inherit the new type. Fix: `useEffect` in `useLineageState` walks inputs on every graph change, calls `computeNodeOutputAttributes` on `sourceNodeId`, patches `attrType` if diverged. FunctionNode linked outputs refreshed in same pass.
 
 ### _propagateCol functionNode checking inputs instead of outputs
-Downstream tracing (`_propagateCol`) for functionNode was checking `node.data.inputs` for colName presence, but downstream propagation should check `outputs`. This meant downstream traces would succeed even for columns the function never emits, and fail for legitimate output columns. Fixed.
+Downstream tracing checked `node.data.inputs` for colName presence instead of `outputs`. Fixed.
 
-### GroupBy/FunctionNode frozen attrType (type inheritance bug)
-All other node types re-derive column types dynamically via `computeNodeOutputAttributes`. GroupByNode and FunctionNode stored `attrType` frozen at drag time in their `inputs[]` array. When an upstream TransformNode executed `astype`, downstream GroupBy/Function nodes didn't inherit the new type — their companion DFs, aggregation type inference, and drag payloads all used stale types. Fix: added a `useEffect` in `useLineageState` that walks GroupBy/Function inputs on every graph change, calls `computeNodeOutputAttributes` on the `sourceNodeId`, matches by `attrName`, and patches `attrType` if it diverged. FunctionNode linked outputs are refreshed in the same pass.
+### TransformNode sync bug (result-DF overwrite)
+Any DataFrame connected downstream of a TransformNode had its columns replaced with `[]`. Fix: restrict companion sync to DFs with `_companionOf` set.
+
+### RenameNode dropping pass-through columns
+`computeNodeOutputAttributes` for renameNode only returned mapped columns. Fix: pass unmapped upstream columns through unchanged.
 
 ---
 
@@ -526,22 +408,25 @@ All other node types re-derive column types dynamically via `computeNodeOutputAt
 
 ### Medium priority
 
+**Broken state for Filter/Transform/Rename column references**
+These nodes derive columns implicitly via `connectedAttrs` from `getUpstreamAttrs`. When a source DF is deleted, column references in op args (`drop_column`, `astype col`, `fillna col`) become stale. Would require storing explicit column references or adding a validation pass that highlights stale op args.
+
 **Validation layer**
-Highlight problems: MergeNode with no key pairs, disconnected inputs, circular paths.
+Highlight problems: MergeNode with no key pairs, GroupBy with no keys, disconnected inputs, circular paths.
 
-**Edge label tooltips**
-Show source column name on hover for DF-level edges (column edges already show label via `ColumnEdge` custom type).
-
-**FilterNode condition autocomplete — full upstream chain**
-Currently `@column` autocomplete only suggests from directly connected `df-in` nodes. Could extend to walk the full upstream chain via `computeNodeOutputAttributes`.
+**Trace from operator nodes**
+Currently `◎` trace button is only on DataFrameNode columns. FunctionNode outputs, GroupByNode agg outputs could call `onTraceColumn(nodeId, colName)` directly — infrastructure is ready.
 
 ### Lower priority
 
-**Lineage path highlighting in Tracker**
-When exact-match tracking, highlight not just matching nodes but the specific edges on the lineage path. Infrastructure (`traceColumnUpstream` / `traceColumnDownstream`) is ready.
+**Edge label tooltips**
+Show source column name on hover for DF-level edges (column edges already show label via `ColumnEdge`).
 
 **GroupByNode aggregation type override**
 Manual type selector next to output name for cases where `inferAggType` inference is wrong.
 
-**Trace from non-DataFrame nodes**
-Currently `◎` trace button is only on DataFrameNode columns. Could add it to FunctionNode outputs, GroupByNode agg outputs, etc. — just call `onTraceColumn(nodeId, colName)` with the operator's nodeId.
+**FilterNode condition autocomplete — full upstream chain**
+Currently `@column` autocomplete suggests from directly connected `df-in` nodes only. Could walk full upstream chain via `computeNodeOutputAttributes`.
+
+**Lineage path highlighting in Tracker**
+When exact-match tracking, highlight the specific edges on the lineage path. Infrastructure (`traceColumnUpstream` / `traceColumnDownstream`) is ready.

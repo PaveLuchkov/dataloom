@@ -365,13 +365,16 @@ export function useLineageState() {
       setEdges((eds) => eds.filter((ed) => !ed.selected));
       const selected = nodesRef.current.filter((n) => n.selected);
       const toDelete = new Set(selected.map((n) => n.id));
-      // Companion DFs are orphaned (not deleted) so downstream chains stay intact.
-      // Their attributes are marked broken; they heal when a matching source is reconnected.
+      // Any DF directly connected to a deleted operator's df-out has its columns marked broken
+      // so downstream chains stay intact. This works regardless of companion status, so the
+      // behaviour persists through reconnection cycles (delete → reconnect → delete again).
       const toOrphan = new Set();
       for (const n of selected) {
-        if (n.data?.companionId) {
-          const companion = nodesRef.current.find((nd) => nd.id === n.data.companionId);
-          if (companion) toOrphan.add(n.data.companionId);
+        if (n.type === 'dataFrameNode') continue;
+        for (const e of edgesRef.current) {
+          if (e.source !== n.id || e.sourceHandle !== 'df-out') continue;
+          const target = nodesRef.current.find((nd) => nd.id === e.target && nd.type === 'dataFrameNode');
+          if (target) toOrphan.add(target.id);
         }
       }
       setNodes((nds) =>
@@ -383,7 +386,8 @@ export function useLineageState() {
               ...n,
               data: {
                 ...n.data,
-                _companionOf: undefined,
+                // Clear _companionOf only when its owning operator is the one being deleted
+                _companionOf: toDelete.has(n.data._companionOf) ? undefined : n.data._companionOf,
                 attributes: (n.data.attributes || []).map((a) => ({ ...a, broken: true })),
               },
             };

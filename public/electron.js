@@ -20,7 +20,7 @@ function createWindow() {
   win.setMenuBarVisibility(false);
 
   if (isDev) {
-    win.loadURL('http://localhost:3001');
+    win.loadURL('http://localhost:3000');
   } else {
     // In production __dirname resolves to the build/ folder inside the asar
     win.loadFile(path.join(__dirname, 'index.html'));

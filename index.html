@@ -2,20 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/assets/dataloom-icon.svg" type="image/svg+xml" />
-    <link rel="icon" href="%PUBLIC_URL%/assets/dataloom.ico" type="image/png" />
+    <link rel="icon" href="assets/dataloom-icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="assets/dataloom.ico" type="image/png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#14171C" />
     <meta name="description" content="Visual editor for documenting DataFrame lineage — nodes, columns, joins, and transformations." />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/assets/logo200.png" />
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <link rel="apple-touch-icon" href="assets/logo200.png" />
+    <link rel="manifest" href="manifest.json" />
     <meta property="og:title" content="DataPav" />
     <meta property="og:description" content="Visual editor for documenting DataFrame lineage — nodes, columns, joins, and transformations." />
     <meta property="og:type" content="website" />
     <title>DataPav</title>
-    <!-- Suppress benign ResizeObserver loop warning before CRA error overlay registers -->
+    <!-- Suppress the benign "ResizeObserver loop" warning. This inline script in
+         <head> runs before the deferred app module, so the listener registers
+         ahead of any overlay handler (the reason it must live here, not in src). -->
     <script>
-      window.addEventListener('error', function(e) {
+      window.addEventListener('error', function (e) {
         if (e.message && e.message.indexOf('ResizeObserver loop') !== -1) {
           e.stopImmediatePropagation();
         }
@@ -25,15 +27,6 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
+    <script type="module" src="/src/index.jsx"></script>
   </body>
 </html>

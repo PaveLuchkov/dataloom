@@ -7,9 +7,11 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
-test('renders toolbar buttons', () => {
+// Smoke test: the toolbar renders. Buttons are now icon-only with tooltip
+// labels (Tip), so we assert on the tooltip text rather than button captions.
+test('renders toolbar tooltips', () => {
   render(<App />);
-  expect(screen.getByText('+ DataFrame')).toBeInTheDocument();
-  expect(screen.getByText('Save')).toBeInTheDocument();
+  expect(screen.getByText('Add DataFrame')).toBeInTheDocument();
+  expect(screen.getByText('Save canvas')).toBeInTheDocument();
   expect(screen.getByText('Export PNG')).toBeInTheDocument();
 });

@@ -14,6 +14,7 @@ const concatSpec = {
   make: config.make,
   companion: false,
   connect: { acceptsColumns: false, dfLevel: config.connections },
+  requiresUpstream: true, // needs a df-in source to do anything
   menu: config.menu,
   header: { editableLabel: true, code: true },
   component: ConcatNode,

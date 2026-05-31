@@ -381,9 +381,33 @@ switching on `node.type`, so there are no longer per-type cases to add in
 `inject(node,edges,nodes)` (extra component props), `refreshData(node,edges,nodes)`
 (frozen input/output type sync), `healBroken(node,edges,nodes)` (DataFrame
 auto-heal), `ownsColumns` (stores its columns explicitly — drives the
-delete-break branch), `mergeable` (selectable to spawn a Merge). The engine
-(`nodeOutputAttrs.js`) is now a thin dispatcher over `outputs` / `traceUpstream` /
-`propagateDownstream`; there is no switch fallback.
+delete-break branch), `mergeable` (selectable to spawn a Merge),
+`requiresUpstream` (operator is lint-flagged when it has no df-in source). The
+engine (`nodeOutputAttrs.js`) is now a thin dispatcher over `outputs` /
+`traceUpstream` / `propagateDownstream`; there is no switch fallback.
+
+**DS feature hooks on the spec (Phase 7):**
+- `validate(node, edges, nodes) → Issue[]` — per-type lint rules (e.g. merge with
+  no key pairs / key type mismatch, groupby with no keys, empty filter/rename/
+  transform/function). Aggregated by `utils/validation.js` (`collectIssues`) which
+  also adds generic checks (broken columns/inputs, duplicate output names,
+  disconnected operators, dependency cycles) and is surfaced through the
+  `useValidation` hook → `ValidationPanel` + the Toolbar flag badge.
+- `toPandas(node, ctx) → string` — best-effort codegen. `utils/exportPandas.js`
+  (`generatePandas`) topologically orders the graph over df-out edges, assigns a
+  python var per node (companion DFs alias their operator's var), and stitches the
+  snippets; a node's own `code` field overrides its snippet. Surfaced via the
+  Export-pandas toolbar button → `PandasExportModal`.
+
+> Column-level lineage edges (DF→DF column drops, handles `${attrId}-source` →
+> `${attrId}-target`) are traced in both directions: DataFrame `traceUpstream`
+> follows an incoming `-target` edge, and `traceColumnDownstream` follows outgoing
+> `-source` edges. Both trace fns carry a `visited` set to stay finite on cycles.
+
+> Not yet built: DuckDB-WASM live preview/profiling (deferred — would add a large
+> WASM dependency + a data-binding flow). The intended shape is a `spec.previewQuery`
+> + a `useDataPreview` hook + a preview panel, binding a DataFrame to a loaded
+> CSV/Parquet sample.
 
 ### Canvas Tabs storage layout
 ```

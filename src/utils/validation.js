@@ -5,6 +5,7 @@
 // Returns a flat Issue[] with the node label attached for display.
 
 import { getSpec } from '../nodes/specs';
+import { computeNodeOutputAttributes } from './nodeOutputAttrs';
 
 // Node ids that participate in a dataflow cycle (df-out → df-in/left-in/right-in).
 function findCycleNodes(nodes, edges) {
@@ -48,6 +49,21 @@ export function collectIssues(nodes, edges) {
     if (brokenInputs.length) {
       push(node, 'error', 'broken-input',
         `${brokenInputs.length} broken input${brokenInputs.length > 1 ? 's' : ''}: ${brokenInputs.map((i) => i.attrName).join(', ')}`);
+    }
+
+    // Generic: an operator that needs a df-in source but has none wired.
+    if (spec.requiresUpstream && !edges.some((e) => e.target === node.id && e.targetHandle === 'df-in')) {
+      push(node, 'warning', 'not-connected', `${spec.menu?.label || 'Node'} has no input connected`);
+    }
+
+    // Generic: duplicate output column names collide downstream.
+    const outNames = computeNodeOutputAttributes(node, edges, nodes).map((a) => a.name);
+    const seen = new Set();
+    const dupes = new Set();
+    for (const name of outNames) { if (seen.has(name)) dupes.add(name); else seen.add(name); }
+    if (dupes.size) {
+      push(node, 'warning', 'duplicate-column',
+        `Duplicate output column${dupes.size > 1 ? 's' : ''}: ${[...dupes].join(', ')}`);
     }
 
     // Per-type rules from the spec.

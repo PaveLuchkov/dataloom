@@ -28,13 +28,36 @@ test('groupby with no keys or aggregations is an error', () => {
 });
 
 test('empty filter / rename / transform / function surface warnings', () => {
+  // Wire each operator to a source so the generic "not-connected" check is satisfied
+  // and only the empty-config warning remains.
+  const s = df('S', 'src', [attr('s1', 'x', 'int')]);
   const f = op('F', 'filterNode', 'f', { conditions: [{ id: 'c1', op: 'WHERE', expr: '' }] });
   const r = op('R', 'renameNode', 'r', { mappings: [{ id: 'm1', from: '', to: '' }] });
   const t = op('T', 'transformNode', 't', { ops: [] });
   const fn = op('FN', 'functionNode', 'fn', { outputs: [] });
-  expect(codes(collectIssues([f, r, t, fn], []))).toEqual(
+  const edges = ['F', 'R', 'T', 'FN'].map((id) => dfEdge('S', id));
+  expect(codes(collectIssues([s, f, r, t, fn], edges))).toEqual(
     ['filter-empty', 'function-no-outputs', 'rename-empty', 'transform-empty']
   );
+});
+
+test('an operator with no upstream input is flagged not-connected', () => {
+  const f = op('F', 'filterNode', 'f', { conditions: [{ id: 'c1', op: 'WHERE', expr: '@x > 1' }] });
+  expect(codes(collectIssues([f], []))).toContain('not-connected');
+});
+
+test('duplicate output column names are flagged', () => {
+  const d = df('D', 'd', [attr('d1', 'x', 'int'), attr('d2', 'x', 'int')]);
+  const found = collectIssues([d], []);
+  expect(found.some((i) => i.code === 'duplicate-column' && /x/.test(i.message))).toBe(true);
+});
+
+test('a join-key type mismatch on merge is a warning', () => {
+  const l = df('L', 'left', [attr('l1', 'k', 'int')]);
+  const r = df('R', 'right', [attr('r1', 'k', 'string')]);
+  const m = op('M', 'mergeNode', 'm', { keyPairs: [{ left: 'k', right: 'k' }] });
+  const edges = [edge('L', 'df-out', 'M', 'left-in'), edge('R', 'df-out', 'M', 'right-in')];
+  expect(codes(collectIssues([l, r, m], edges))).toContain('merge-key-type-mismatch');
 });
 
 test('broken columns and inputs are reported as errors', () => {

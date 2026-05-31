@@ -15,6 +15,7 @@ const renameSpec = {
   make: config.make,
   companion: true,
   connect: { acceptsColumns: false, dfLevel: config.connections },
+  requiresUpstream: true, // needs a df-in source to do anything
   menu: config.menu,
   header: { editableLabel: true, code: true },
   component: RenameNode,

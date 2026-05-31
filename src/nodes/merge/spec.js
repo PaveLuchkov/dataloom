@@ -64,15 +64,30 @@ const mergeSpec = {
   propagateDownstream: (node, colName, edges, nodes) =>
     engine.computeNodeOutputAttributes(node, edges, nodes).some((a) => a.name === colName) ? colName : null,
 
-  validate: (node, edges) => {
+  validate: (node, edges, nodes) => {
     const issues = [];
-    const hasLeft  = edges.some((e) => e.target === node.id && e.targetHandle === 'left-in');
-    const hasRight = edges.some((e) => e.target === node.id && e.targetHandle === 'right-in');
-    if (!hasLeft || !hasRight) {
+    const leftEdge  = edges.find((e) => e.target === node.id && e.targetHandle === 'left-in');
+    const rightEdge = edges.find((e) => e.target === node.id && e.targetHandle === 'right-in');
+    if (!leftEdge || !rightEdge) {
       issues.push({ nodeId: node.id, severity: 'warning', code: 'merge-missing-input', message: 'Merge is missing a left or right input' });
     }
+    const pairs = (node.data.keyPairs || []).filter((p) => p.left && p.right);
     if (!(node.data.keyPairs || []).length) {
       issues.push({ nodeId: node.id, severity: 'error', code: 'merge-no-keys', message: 'Merge has no join key pairs' });
+    }
+    // Join-key type mismatch: pandas would coerce/empty-join silently.
+    const leftNode  = leftEdge  ? nodes.find((n) => n.id === leftEdge.source)  : null;
+    const rightNode = rightEdge ? nodes.find((n) => n.id === rightEdge.source) : null;
+    if (leftNode && rightNode) {
+      const lAttrs = engine.computeNodeOutputAttributes(leftNode, edges, nodes);
+      const rAttrs = engine.computeNodeOutputAttributes(rightNode, edges, nodes);
+      for (const p of pairs) {
+        const lt = lAttrs.find((a) => a.name === p.left)?.type;
+        const rt = rAttrs.find((a) => a.name === p.right)?.type;
+        if (lt && rt && lt !== rt) {
+          issues.push({ nodeId: node.id, severity: 'warning', code: 'merge-key-type-mismatch', message: `Join key ${p.left}/${p.right} types differ (${lt} vs ${rt})` });
+        }
+      }
     }
     return issues;
   },

@@ -1,6 +1,13 @@
 // Single source of truth: "what columns does a node output?"
 // Used by useLineageState to inject connectedAttrs, leftDF/rightDF,
 // and to drive the result-DF auto-sync.
+//
+// Migration note: each function first asks the lineage registry whether the
+// node type has a migrated spec; if so it delegates. Otherwise it falls through
+// to the switch below. The recursion (getUpstreamAttrs, traceColumnUpstream,
+// _propagateCol) re-enters these dispatchers, so spec and switch types interop.
+
+import { getLineage } from '../nodes/lineageRegistry';
 
 export function inferAggType(func, inputType) {
   if (func === 'count' || func === 'nunique') return 'int';
@@ -11,6 +18,9 @@ export function inferAggType(func, inputType) {
 }
 
 export function computeNodeOutputAttributes(node, edges, nodes) {
+  const ls = getLineage(node.type);
+  if (ls?.outputs) return ls.outputs(node, edges, nodes);
+
   switch (node.type) {
     case 'dataFrameNode':
       return node.data.attributes || [];
@@ -117,6 +127,9 @@ export function getUpstreamAttrs(nodeId, edges, nodes, handleId = 'df-in') {
 export function traceColumnUpstream(nodeId, colName, edges, nodes) {
   const node = nodes.find((n) => n.id === nodeId);
   if (!node) return null;
+
+  const ls = getLineage(node.type);
+  if (ls?.traceUpstream) return ls.traceUpstream(node, colName, edges, nodes);
 
   switch (node.type) {
     case 'dataFrameNode': {
@@ -263,6 +276,9 @@ export function traceColumnDownstream(nodeId, colName, edges, nodes) {
 }
 
 function _propagateCol(targetNode, colName, edges, nodes) {
+  const ls = getLineage(targetNode.type);
+  if (ls?.propagateDownstream) return ls.propagateDownstream(targetNode, colName, edges, nodes);
+
   switch (targetNode.type) {
     case 'dataFrameNode':
       return (targetNode.data.attributes || []).some((a) => a.name === colName) ? colName : null;

@@ -100,6 +100,13 @@ const functionSpec = {
     return changed ? { ...node.data, inputs, outputs } : null;
   },
 
+  validate: (node) => {
+    if (!(node.data.outputs || []).length && !node.data.extendMode) {
+      return [{ nodeId: node.id, severity: 'warning', code: 'function-no-outputs', message: 'Function defines no output columns' }];
+    }
+    return [];
+  },
+
   useCallbacks: ({ setNodes, setEdges, pushHistory }) => useFunctionCallbacks(setNodes, setEdges, pushHistory),
 };
 

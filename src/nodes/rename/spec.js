@@ -56,6 +56,11 @@ const renameSpec = {
     return engine.computeNodeOutputAttributes(node, edges, nodes).some((a) => a.name === colName) ? colName : null;
   },
 
+  validate: (node) => {
+    const valid = (node.data.mappings || []).some((m) => m.from && m.to);
+    return valid ? [] : [{ nodeId: node.id, severity: 'warning', code: 'rename-empty', message: 'Rename has no from→to mappings' }];
+  },
+
   useCallbacks: ({ setNodes, pushHistory }) => useRenameCallbacks(setNodes, pushHistory),
 };
 

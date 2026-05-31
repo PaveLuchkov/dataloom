@@ -93,6 +93,19 @@ const groupbySpec = {
     return changed ? { ...node.data, inputs } : null;
   },
 
+  validate: (node) => {
+    const issues = [];
+    const keys = (node.data.groupByInputIds || []).length;
+    const aggs = (node.data.aggregations || []).filter((a) => a.outputName).length;
+    if (!keys && !aggs) {
+      issues.push({ nodeId: node.id, severity: 'error', code: 'groupby-empty', message: 'GroupBy has no group keys or aggregations' });
+    }
+    if (!(node.data.inputs || []).length) {
+      issues.push({ nodeId: node.id, severity: 'warning', code: 'groupby-no-inputs', message: 'GroupBy has no columns connected' });
+    }
+    return issues;
+  },
+
   useCallbacks: ({ setNodes, setEdges, pushHistory }) => useGroupByCallbacks(setNodes, setEdges, pushHistory),
 };
 

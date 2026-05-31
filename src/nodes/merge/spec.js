@@ -64,6 +64,19 @@ const mergeSpec = {
   propagateDownstream: (node, colName, edges, nodes) =>
     engine.computeNodeOutputAttributes(node, edges, nodes).some((a) => a.name === colName) ? colName : null,
 
+  validate: (node, edges) => {
+    const issues = [];
+    const hasLeft  = edges.some((e) => e.target === node.id && e.targetHandle === 'left-in');
+    const hasRight = edges.some((e) => e.target === node.id && e.targetHandle === 'right-in');
+    if (!hasLeft || !hasRight) {
+      issues.push({ nodeId: node.id, severity: 'warning', code: 'merge-missing-input', message: 'Merge is missing a left or right input' });
+    }
+    if (!(node.data.keyPairs || []).length) {
+      issues.push({ nodeId: node.id, severity: 'error', code: 'merge-no-keys', message: 'Merge has no join key pairs' });
+    }
+    return issues;
+  },
+
   useCallbacks: ({ setNodes, pushHistory }) => useMergeCallbacks(setNodes, pushHistory),
 };
 

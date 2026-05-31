@@ -62,6 +62,11 @@ const transformSpec = {
   propagateDownstream: (node, colName, edges, nodes) =>
     engine.computeNodeOutputAttributes(node, edges, nodes).some((a) => a.name === colName) ? colName : null,
 
+  validate: (node) => {
+    const ops = (node.data.ops || []).filter((o) => o.type);
+    return ops.length ? [] : [{ nodeId: node.id, severity: 'warning', code: 'transform-empty', message: 'Transform has no operations' }];
+  },
+
   useCallbacks: ({ setNodes, pushHistory }) => useTransformCallbacks(setNodes, pushHistory),
 };
 

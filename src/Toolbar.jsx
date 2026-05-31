@@ -190,6 +190,13 @@ const IcoCrosshair = () => (
   </Ico>
 );
 
+const IcoFlag = () => (
+  <Ico>
+    <line x1="3" y1="1.5" x2="3" y2="14" />
+    <path d="M3 2.5h8.5l-2 2.5 2 2.5H3" />
+  </Ico>
+);
+
 const IcoRename = () => (
   <Ico>
     <line x1="1.5" y1="5" x2="5.5" y2="5" />
@@ -305,6 +312,7 @@ export default function Toolbar({
   selectedDFCount, onMergeSelected,
   onUndo, onRedo, onAutoLayout, onSearch, onTrackAttr, trackerActive,
   onImportSql, onExportSql,
+  onValidate, validationActive, validationErrors = 0, validationWarnings = 0,
 }) {
   const canMerge = selectedDFCount === 2;
 
@@ -369,6 +377,26 @@ export default function Toolbar({
         <Btn onClick={onTrackAttr} active={trackerActive} color="text-amber-400">
           <IcoCrosshair />
         </Btn>
+      </Tip>
+
+      <Tip label="Problems / validation">
+        <span className="relative">
+          <Btn
+            onClick={onValidate}
+            active={validationActive}
+            color={validationErrors ? 'text-red-400' : validationWarnings ? 'text-amber-400' : undefined}
+          >
+            <IcoFlag />
+          </Btn>
+          {(validationErrors > 0 || validationWarnings > 0) && (
+            <span
+              className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center pointer-events-none"
+              style={{ background: validationErrors ? '#ef4444' : '#f59e0b', color: '#fff' }}
+            >
+              {validationErrors || validationWarnings}
+            </span>
+          )}
+        </span>
       </Tip>
 
       {selectedDFCount > 0 && (

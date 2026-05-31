@@ -16,6 +16,8 @@ import ShortcutsModal from './components/ShortcutsModal';
 import { generateSql } from './utils/exportSql';
 import { computeNodeOutputAttributes, traceColumnUpstream, traceColumnDownstream, flattenUpstream } from './utils/nodeOutputAttrs';
 import TracePanel from './components/TracePanel';
+import ValidationPanel from './components/ValidationPanel';
+import { useValidation } from './hooks/useValidation';
 import { useLineageState } from './hooks/useLineageState';
 import { useLineagePersistence } from './hooks/useLineagePersistence';
 import { useCanvasTabs } from './hooks/useCanvasTabs';
@@ -68,6 +70,17 @@ export default function App() {
   } = useLineageState();
 
   const { applyLayout } = useAutoLayout();
+
+  // ── Validation / lint ────────────────────────────────────────────────────
+  const [validationOpen, setValidationOpen] = useState(false);
+  const validation = useValidation(nodes, edges);
+  const errorNodeIds = useMemo(() => {
+    const ids = new Set();
+    for (const [nodeId, list] of validation.byNode) {
+      if (list.some((i) => i.severity === 'error')) ids.add(nodeId);
+    }
+    return ids;
+  }, [validation]);
 
   // ── Toast ──────────────────────────────────────────────────────────────
 
@@ -269,7 +282,15 @@ export default function App() {
       });
     }
 
-    if (!trackerMatchIds) return withTrace;
+    if (!trackerMatchIds) {
+      // When the problems panel is open, ring nodes that have errors.
+      if (validationOpen && errorNodeIds.size) {
+        return withTrace.map((n) => errorNodeIds.has(n.id)
+          ? { ...n, style: { ...n.style, boxShadow: '0 0 0 2px #ef4444, 0 0 12px rgba(239,68,68,0.4)', borderRadius: 8, transition: 'all 0.2s ease' } }
+          : n);
+      }
+      return withTrace;
+    }
     const highlight = { query: trackerQuery.trim().toLowerCase(), wholeWord: trackerWholeWord };
     return withTrace.map((n) => {
       const matched = trackerMatchIds.has(n.id);
@@ -281,7 +302,7 @@ export default function App() {
           : { ...n.style, opacity: 0.12, transition: 'all 0.2s ease' },
       };
     });
-  }, [nodesWithCallbacks, trackerMatchIds, trackerQuery, trackerWholeWord, tracePathNodeIds, traceState, onTraceColumn]);
+  }, [nodesWithCallbacks, trackerMatchIds, trackerQuery, trackerWholeWord, tracePathNodeIds, traceState, onTraceColumn, validationOpen, errorNodeIds]);
 
   const trackedEdges = useMemo(() => {
     if (!trackerMatchIds) return edges;
@@ -468,6 +489,10 @@ export default function App() {
           trackerActive={trackerOpen}
           onImportSql={() => setSqlImportOpen(true)}
           onExportSql={handleExportSql}
+          onValidate={() => setValidationOpen((v) => !v)}
+          validationActive={validationOpen}
+          validationErrors={validation.errors}
+          validationWarnings={validation.warnings}
         />
 
         {traceState && (
@@ -475,6 +500,15 @@ export default function App() {
             traceState={traceState}
             traceResult={traceResult}
             onClose={() => setTraceState(null)}
+            onNavigate={navigateToNode}
+          />
+        )}
+
+        {validationOpen && !traceState && (
+          <ValidationPanel
+            validation={validation}
+            nodes={nodes}
+            onClose={() => setValidationOpen(false)}
             onNavigate={navigateToNode}
           />
         )}

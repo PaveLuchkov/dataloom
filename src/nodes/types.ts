@@ -65,6 +65,10 @@ export interface Issue {
   nodeId: string;
   severity: 'error' | 'warning';
   message: string;
+  /** Stable machine code for grouping/testing, e.g. 'merge-no-keys'. */
+  code?: string;
+  /** Node label, attached by the aggregator for display. */
+  nodeLabel?: string;
 }
 
 export type RFNode<D = any> = Node<D>;

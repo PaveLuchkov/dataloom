@@ -36,6 +36,12 @@ const filterSpec = {
   propagateDownstream: (node, colName, edges, nodes) =>
     engine.computeNodeOutputAttributes(node, edges, nodes).some((a) => a.name === colName) ? colName : null,
 
+  validate: (node) => {
+    const conds = node.data.conditions || (node.data.condition ? [{ expr: node.data.condition }] : []);
+    const hasExpr = conds.some((c) => (c.expr || '').trim());
+    return hasExpr ? [] : [{ nodeId: node.id, severity: 'warning', code: 'filter-empty', message: 'Filter has no condition' }];
+  },
+
   useCallbacks: ({ setNodes, pushHistory }) => useFilterCallbacks(setNodes, pushHistory),
 };
 

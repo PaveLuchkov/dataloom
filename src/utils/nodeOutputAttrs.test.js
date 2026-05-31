@@ -324,3 +324,40 @@ describe('flattenUpstream', () => {
     expect(flattenUpstream(null)).toEqual([]);
   });
 });
+
+// ── Cycle safety ─────────────────────────────────────────────────────────────
+// A graph loop (e.g. a companion result wired back toward its operator) must not
+// recurse without bound — an unguarded trace threw RangeError mid-render, which
+// blanked the canvas. The visited-set guard keeps tracing finite.
+describe('trace cycle safety', () => {
+  const cyclicDFs = () => {
+    const a = df('A', 'a', [attr('a1', 'x', 'int')]);
+    const b = df('B', 'b', [attr('b1', 'x', 'int')]);
+    return { nodes: [a, b], edges: [dfEdge('A', 'B'), dfEdge('B', 'A')] };
+  };
+
+  test('traceColumnUpstream terminates on a df cycle', () => {
+    const { nodes, edges } = cyclicDFs();
+    expect(() => traceColumnUpstream('A', 'x', edges, nodes)).not.toThrow();
+    expect(traceColumnUpstream('A', 'x', edges, nodes)).toMatchObject({ nodeId: 'A', colName: 'x' });
+  });
+
+  test('traceColumnDownstream terminates on a df cycle', () => {
+    const { nodes, edges } = cyclicDFs();
+    expect(() => traceColumnDownstream('A', 'x', edges, nodes)).not.toThrow();
+    expect(Array.isArray(traceColumnDownstream('A', 'x', edges, nodes))).toBe(true);
+  });
+
+  test('a self-referential operator→companion loop terminates', () => {
+    // M(merge) -> C(companion), and C wired back into M's left input.
+    const m = op('M', 'mergeNode', 'm', {});
+    const c = df('C', 'result', [attr('c1', 'x', 'int')], {});
+    c.data._companionOf = 'M';
+    const nodes = [m, c];
+    const edges = [
+      { id: 'ecomp', source: 'M', target: 'C', sourceHandle: 'df-out', targetHandle: 'df-in', data: { isCompanionEdge: true } },
+      { id: 'eback', source: 'C', target: 'M', sourceHandle: 'df-out', targetHandle: 'left-in' },
+    ];
+    expect(() => traceColumnUpstream('C', 'x', edges, nodes)).not.toThrow();
+  });
+});

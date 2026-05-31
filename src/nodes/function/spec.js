@@ -44,13 +44,13 @@ const functionSpec = {
     return [...sourceAttrs.filter((a) => !ownNames.has(a.name)), ...ownOutputs];
   },
 
-  traceUpstream: (node, colName, edges, nodes) => {
+  traceUpstream: (node, colName, edges, nodes, visited) => {
     const output = (node.data.outputs || []).find((o) => o.name === colName);
     if (output) {
       const step = { nodeId: node.id, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
       if (output.fromInputId) {
         const inp = (node.data.inputs || []).find((i) => i.id === output.fromInputId);
-        if (inp) step.upstream = engine.traceColumnUpstream(inp.sourceNodeId, inp.attrName, edges, nodes);
+        if (inp) step.upstream = engine.traceColumnUpstream(inp.sourceNodeId, inp.attrName, edges, nodes, visited);
         return step;
       }
       return { ...step, createdHere: true };
@@ -59,7 +59,7 @@ const functionSpec = {
     if (node.data.extendMode) {
       const step = { nodeId: node.id, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
       for (const e of edges.filter((e) => e.target === node.id && e.targetHandle === 'df-in')) {
-        const r = engine.traceColumnUpstream(e.source, colName, edges, nodes);
+        const r = engine.traceColumnUpstream(e.source, colName, edges, nodes, visited);
         if (r) { step.upstream = r; break; }
       }
       return step.upstream ? step : null;

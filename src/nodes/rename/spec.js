@@ -36,13 +36,13 @@ const renameSpec = {
     });
   },
 
-  traceUpstream: (node, colName, edges, nodes) => {
+  traceUpstream: (node, colName, edges, nodes, visited) => {
     // A renamed column traces upstream with its original name; otherwise pass-through.
     const mapping = (node.data.mappings || []).find((m) => m.from && m.to && m.to === colName);
     const sourceColName = mapping ? mapping.from : colName;
     const step = { nodeId: node.id, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
     for (const e of edges.filter((e) => e.target === node.id && e.targetHandle === 'df-in')) {
-      const r = engine.traceColumnUpstream(e.source, sourceColName, edges, nodes);
+      const r = engine.traceColumnUpstream(e.source, sourceColName, edges, nodes, visited);
       if (r) { step.upstream = r; break; }
     }
     // Pass-through column: only valid if found upstream; renamed column: always valid.

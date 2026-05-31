@@ -44,18 +44,18 @@ const mergeSpec = {
     return [...lAttrs, ...rAttrs.filter((a) => !seen.has(a.name))];
   },
 
-  traceUpstream: (node, colName, edges, nodes) => {
+  traceUpstream: (node, colName, edges, nodes, visited) => {
     const leftEdge  = edges.find((e) => e.target === node.id && e.targetHandle === 'left-in');
     const rightEdge = edges.find((e) => e.target === node.id && e.targetHandle === 'right-in');
     const leftNode  = leftEdge  ? nodes.find((n) => n.id === leftEdge.source)  : null;
     const rightNode = rightEdge ? nodes.find((n) => n.id === rightEdge.source) : null;
     const step = { nodeId: node.id, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
     if (leftNode && engine.computeNodeOutputAttributes(leftNode, edges, nodes).some((a) => a.name === colName)) {
-      step.upstream = engine.traceColumnUpstream(leftNode.id, colName, edges, nodes);
+      step.upstream = engine.traceColumnUpstream(leftNode.id, colName, edges, nodes, visited);
       return step;
     }
     if (rightNode && engine.computeNodeOutputAttributes(rightNode, edges, nodes).some((a) => a.name === colName)) {
-      step.upstream = engine.traceColumnUpstream(rightNode.id, colName, edges, nodes);
+      step.upstream = engine.traceColumnUpstream(rightNode.id, colName, edges, nodes, visited);
       return step;
     }
     return step;

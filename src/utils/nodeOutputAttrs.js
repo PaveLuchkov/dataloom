@@ -48,19 +48,32 @@ export function getUpstreamAttrs(nodeId, edges, nodes, handleId = 'df-in') {
 //   groupByNode agg: aggFunc, inputColName
 //   functionNode:    createdHere: true
 
-export function traceColumnUpstream(nodeId, colName, edges, nodes) {
+export function traceColumnUpstream(nodeId, colName, edges, nodes, visited = new Set()) {
   const node = nodes.find((n) => n.id === nodeId);
   if (!node) return null;
 
+  // Cycle guard: a graph loop (e.g. wiring a companion result back toward its
+  // operator) would otherwise recurse until the stack overflows, which throws
+  // mid-render and blanks the canvas. Stop re-entering the same (node, column).
+  const key = `${nodeId}::${colName}`;
+  if (visited.has(key)) return null;
+  visited.add(key);
+
   const ls = getLineage(node.type);
-  return ls?.traceUpstream ? ls.traceUpstream(node, colName, edges, nodes) : null;
+  return ls?.traceUpstream ? ls.traceUpstream(node, colName, edges, nodes, visited) : null;
 }
 
 // traceColumnDownstream: walks the graph forward from (nodeId, colName)
 // Returns array of branches (can fan out at concat/merge forks):
 //   [{ nodeId, colName, nodeType, nodeLabel, downstream: [...] }]
 
-export function traceColumnDownstream(nodeId, colName, edges, nodes) {
+export function traceColumnDownstream(nodeId, colName, edges, nodes, visited = new Set()) {
+  // Cycle guard (see traceColumnUpstream): don't re-expand a (node, column)
+  // already on this traversal, so a graph loop can't recurse without bound.
+  const key = `${nodeId}::${colName}`;
+  if (visited.has(key)) return [];
+  visited.add(key);
+
   const results = [];
   // Follow all df-out edges from this node
   const outEdges = edges.filter((e) => e.source === nodeId && e.sourceHandle === 'df-out');
@@ -75,7 +88,7 @@ export function traceColumnDownstream(nodeId, colName, edges, nodes) {
       colName: propagated,
       nodeType: target.type,
       nodeLabel: target.data.label,
-      downstream: traceColumnDownstream(target.id, propagated, edges, nodes),
+      downstream: traceColumnDownstream(target.id, propagated, edges, nodes, visited),
     });
   }
   return results;

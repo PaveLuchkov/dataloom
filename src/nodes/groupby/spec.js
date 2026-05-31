@@ -36,20 +36,20 @@ const groupbySpec = {
     return [...keys, ...aggs];
   },
 
-  traceUpstream: (node, colName, edges, nodes) => {
+  traceUpstream: (node, colName, edges, nodes, visited) => {
     const inputs = node.data.inputs || [];
     const groupByInputIds = node.data.groupByInputIds || [];
     const keyInp = inputs.find((i) => groupByInputIds.includes(i.id) && i.attrName === colName);
     if (keyInp) {
       const step = { nodeId: node.id, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
-      step.upstream = engine.traceColumnUpstream(keyInp.sourceNodeId, colName, edges, nodes);
+      step.upstream = engine.traceColumnUpstream(keyInp.sourceNodeId, colName, edges, nodes, visited);
       return step;
     }
     const agg = (node.data.aggregations || []).find((a) => a.outputName === colName);
     if (agg) {
       const inp = inputs.find((i) => i.id === agg.inputId);
       const step = { nodeId: node.id, colName, nodeType: node.type, nodeLabel: node.data.label, aggFunc: agg.func, inputColName: inp?.attrName, upstream: null };
-      if (inp) step.upstream = engine.traceColumnUpstream(inp.sourceNodeId, inp.attrName, edges, nodes);
+      if (inp) step.upstream = engine.traceColumnUpstream(inp.sourceNodeId, inp.attrName, edges, nodes, visited);
       return step;
     }
     return null;

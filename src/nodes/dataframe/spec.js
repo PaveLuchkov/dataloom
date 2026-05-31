@@ -27,7 +27,7 @@ const dataframeSpec = {
   // ── Lineage ────────────────────────────────────────────────────────────────
   outputs: (node) => node.data.attributes || [],
 
-  traceUpstream: (node, colName, edges, nodes) => {
+  traceUpstream: (node, colName, edges, nodes, visited) => {
     if (!(node.data.attributes || []).some((a) => a.name === colName)) return null;
     const step = { nodeId: node.id, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
     // A result/companion DF traces back through its incoming df-in edge.
@@ -36,7 +36,7 @@ const dataframeSpec = {
     );
     if (inEdge) {
       const src = nodes.find((n) => n.id === inEdge.source);
-      if (src) step.upstream = engine.traceColumnUpstream(src.id, colName, edges, nodes);
+      if (src) step.upstream = engine.traceColumnUpstream(src.id, colName, edges, nodes, visited);
     }
     return step;
   },

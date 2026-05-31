@@ -45,7 +45,7 @@ const transformSpec = {
     ];
   },
 
-  traceUpstream: (node, colName, edges, nodes) => {
+  traceUpstream: (node, colName, edges, nodes, visited) => {
     const ops = node.data.ops || [];
     if (ops.some((op) => op.type === 'drop_column' && op.args?.col === colName)) return null;
     if (ops.some((op) => op.type === 'add_column' && op.args?.col === colName)) {
@@ -53,7 +53,7 @@ const transformSpec = {
     }
     const step = { nodeId: node.id, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
     for (const e of edges.filter((e) => e.target === node.id && e.targetHandle === 'df-in')) {
-      const r = engine.traceColumnUpstream(e.source, colName, edges, nodes);
+      const r = engine.traceColumnUpstream(e.source, colName, edges, nodes, visited);
       if (r) { step.upstream = r; break; }
     }
     return step;

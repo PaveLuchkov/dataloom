@@ -74,10 +74,21 @@ test('adding a companion-producing operator (groupBy) auto-spawns a result DataF
   expect(operator.data.companionId).toBe(companion.id);
 });
 
-test('adding a non-companion node (filter) does not spawn a companion DataFrame', () => {
+test('adding a filter (companion operator) also auto-spawns a result DataFrame', () => {
   const { result } = renderHook(() => useLineageState());
   seed(result, []);
   act(() => { result.current.addNodeOfType('filterNode', 100, 100); });
+
+  const operator = result.current.nodes.find((n) => n.type === 'filterNode');
+  const companion = result.current.nodes.find((n) => n.data._companionOf === operator.id);
+  expect(companion).toBeDefined();
+  expect(operator.data.companionId).toBe(companion.id);
+});
+
+test('adding a non-companion node (concat) does not spawn a companion DataFrame', () => {
+  const { result } = renderHook(() => useLineageState());
+  seed(result, []);
+  act(() => { result.current.addNodeOfType('concatNode', 100, 100); });
 
   expect(result.current.nodes).toHaveLength(1);
   expect(result.current.nodes[0].data.companionId).toBeUndefined();

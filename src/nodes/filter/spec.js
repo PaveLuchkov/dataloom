@@ -12,7 +12,7 @@ const filterSpec = {
   minimapColor: config.minimapColor,
   dagre: { width: config.dagreWidth, height: config.dagreHeight },
   make: config.make,
-  companion: false,
+  companion: true, // yields a filtered result DataFrame, like the other operators
   connect: { acceptsColumns: false, dfLevel: config.connections },
   requiresUpstream: true, // needs a df-in source to do anything
   menu: config.menu,

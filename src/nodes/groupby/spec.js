@@ -106,6 +106,23 @@ const groupbySpec = {
     return issues;
   },
 
+  toPandas: (node, ctx) => {
+    const inputs = node.data.inputs || [];
+    const srcId = inputs[0]?.sourceNodeId;
+    const up = (srcId && ctx.varOf(srcId)) || '<source>';
+    const keys = (node.data.groupByInputIds || [])
+      .map((id) => inputs.find((i) => i.id === id))
+      .filter(Boolean)
+      .map((i) => `'${i.attrName}'`);
+    if (!keys.length) return `${ctx.var} = ${up}  # groupby (no keys)`;
+    const aggs = (node.data.aggregations || []).filter((a) => a.outputName).map((a) => {
+      const inp = inputs.find((i) => i.id === a.inputId);
+      return `${a.outputName}=('${inp ? inp.attrName : '?'}', '${a.func}')`;
+    });
+    const tail = aggs.length ? `.agg(${aggs.join(', ')})` : '.size().reset_index(name=\'count\')';
+    return `${ctx.var} = ${up}.groupby([${keys.join(', ')}], as_index=False)${tail}`;
+  },
+
   useCallbacks: ({ setNodes, setEdges, pushHistory }) => useGroupByCallbacks(setNodes, setEdges, pushHistory),
 };
 

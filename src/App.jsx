@@ -12,8 +12,10 @@ import AttributeTrackerPanel from './components/AttributeTrackerPanel';
 import TabBar from './components/TabBar';
 import SqlImportModal from './components/SqlImportModal';
 import SqlExportModal from './components/SqlExportModal';
+import PandasExportModal from './components/PandasExportModal';
 import ShortcutsModal from './components/ShortcutsModal';
 import { generateSql } from './utils/exportSql';
+import { generatePandas } from './utils/exportPandas';
 import { computeNodeOutputAttributes, traceColumnUpstream, traceColumnDownstream, flattenUpstream } from './utils/nodeOutputAttrs';
 import TracePanel from './components/TracePanel';
 import ValidationPanel from './components/ValidationPanel';
@@ -157,6 +159,14 @@ export default function App() {
   const handleExportSql = useCallback(() => {
     setExportedSql(generateSql(nodes, edges));
     setSqlExportOpen(true);
+  }, [nodes, edges]);
+
+  // ── pandas export ─────────────────────────────────────────────────────
+  const [pandasExportOpen, setPandasExportOpen] = useState(false);
+  const [exportedPandas, setExportedPandas] = useState('');
+  const handleExportPandas = useCallback(() => {
+    setExportedPandas(generatePandas(nodes, edges));
+    setPandasExportOpen(true);
   }, [nodes, edges]);
 
   // ── SQL import ────────────────────────────────────────────────────────
@@ -489,6 +499,7 @@ export default function App() {
           trackerActive={trackerOpen}
           onImportSql={() => setSqlImportOpen(true)}
           onExportSql={handleExportSql}
+          onExportPandas={handleExportPandas}
           onValidate={() => setValidationOpen((v) => !v)}
           validationActive={validationOpen}
           validationErrors={validation.errors}
@@ -559,6 +570,13 @@ export default function App() {
           <SqlExportModal
             sql={exportedSql}
             onClose={() => setSqlExportOpen(false)}
+          />
+        )}
+
+        {pandasExportOpen && (
+          <PandasExportModal
+            code={exportedPandas}
+            onClose={() => setPandasExportOpen(false)}
           />
         )}
 

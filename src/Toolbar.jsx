@@ -190,6 +190,15 @@ const IcoCrosshair = () => (
   </Ico>
 );
 
+const IcoPandas = () => (
+  <Ico>
+    <rect x="1.5" y="2" width="12" height="11" rx="1.5" />
+    <line x1="1.5" y1="5.5" x2="13.5" y2="5.5" />
+    <line x1="5.5" y1="5.5" x2="5.5" y2="13" />
+    <line x1="9.5" y1="5.5" x2="9.5" y2="13" />
+  </Ico>
+);
+
 const IcoFlag = () => (
   <Ico>
     <line x1="3" y1="1.5" x2="3" y2="14" />
@@ -311,7 +320,7 @@ export default function Toolbar({
   onCopyToClipboard, onPasteFromClipboard, onCopyShareUrl,
   selectedDFCount, onMergeSelected,
   onUndo, onRedo, onAutoLayout, onSearch, onTrackAttr, trackerActive,
-  onImportSql, onExportSql,
+  onImportSql, onExportSql, onExportPandas,
   onValidate, validationActive, validationErrors = 0, validationWarnings = 0,
 }) {
   const canMerge = selectedDFCount === 2;
@@ -369,6 +378,7 @@ export default function Toolbar({
 
       <Tip label="Import SQL"><Btn onClick={onImportSql}><IcoSqlIn /></Btn></Tip>
       <Tip label="Export SQL"><Btn onClick={onExportSql}><IcoSqlOut /></Btn></Tip>
+      <Tip label="Export pandas"><Btn onClick={onExportPandas} color="text-yellow-300"><IcoPandas /></Btn></Tip>
 
       <Sep />
 

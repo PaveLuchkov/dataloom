@@ -44,6 +44,11 @@ const concatSpec = {
   propagateDownstream: (node, colName, edges, nodes) =>
     engine.computeNodeOutputAttributes(node, edges, nodes).some((a) => a.name === colName) ? colName : null,
 
+  toPandas: (node, ctx) => {
+    const ups = ctx.upstreamVars(node, 'df-in');
+    return `${ctx.var} = pd.concat([${ups.length ? ups.join(', ') : '<inputs>'}], ignore_index=True)`;
+  },
+
   useCallbacks: () => useConcatCallbacks(),
 };
 

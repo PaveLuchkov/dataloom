@@ -67,6 +67,27 @@ const transformSpec = {
     return ops.length ? [] : [{ nodeId: node.id, severity: 'warning', code: 'transform-empty', message: 'Transform has no operations' }];
   },
 
+  toPandas: (node, ctx) => {
+    const up = ctx.upstreamVars(node, 'df-in')[0] || '<source>';
+    const v = ctx.var;
+    const lines = [`${v} = ${up}.copy()`];
+    for (const op of (node.data.ops || [])) {
+      const col = op.args?.col;
+      const tv = op.args?.type_val;
+      switch (op.type) {
+        case 'drop_duplicates': lines.push(`${v} = ${v}.drop_duplicates()`); break;
+        case 'dropna': lines.push(`${v} = ${v}.dropna()`); break;
+        case 'fillna': lines.push(`${v} = ${v}.fillna(${op.args?.value != null ? JSON.stringify(op.args.value) : 0})`); break;
+        case 'astype': if (col && tv) lines.push(`${v}['${col}'] = ${v}['${col}'].astype('${tv}')`); break;
+        case 'sort_values': if (col) lines.push(`${v} = ${v}.sort_values('${col}')`); break;
+        case 'drop_column': if (col) lines.push(`${v} = ${v}.drop(columns=['${col}'])`); break;
+        case 'add_column': if (col) lines.push(`${v}['${col}'] = None  # TODO: define ${col}`); break;
+        default: break;
+      }
+    }
+    return lines.join('\n');
+  },
+
   useCallbacks: ({ setNodes, pushHistory }) => useTransformCallbacks(setNodes, pushHistory),
 };
 

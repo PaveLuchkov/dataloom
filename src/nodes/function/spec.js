@@ -107,6 +107,18 @@ const functionSpec = {
     return [];
   },
 
+  toPandas: (node, ctx) => {
+    const inputs = node.data.inputs || [];
+    const up = ctx.upstreamVars(node, 'df-in')[0]
+      || (inputs[0]?.sourceNodeId && ctx.varOf(inputs[0].sourceNodeId))
+      || '<source>';
+    const lines = [`${ctx.var} = ${up}.copy()  # function: ${node.data.label}`];
+    for (const o of (node.data.outputs || [])) {
+      lines.push(`${ctx.var}['${o.name}'] = None  # TODO: compute ${o.name}`);
+    }
+    return lines.join('\n');
+  },
+
   useCallbacks: ({ setNodes, setEdges, pushHistory }) => useFunctionCallbacks(setNodes, setEdges, pushHistory),
 };
 

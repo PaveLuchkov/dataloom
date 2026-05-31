@@ -61,6 +61,12 @@ const renameSpec = {
     return valid ? [] : [{ nodeId: node.id, severity: 'warning', code: 'rename-empty', message: 'Rename has no from→to mappings' }];
   },
 
+  toPandas: (node, ctx) => {
+    const up = ctx.upstreamVars(node, 'df-in')[0] || '<source>';
+    const pairs = (node.data.mappings || []).filter((m) => m.from && m.to).map((m) => `'${m.from}': '${m.to}'`);
+    return pairs.length ? `${ctx.var} = ${up}.rename(columns={${pairs.join(', ')}})` : `${ctx.var} = ${up}`;
+  },
+
   useCallbacks: ({ setNodes, pushHistory }) => useRenameCallbacks(setNodes, pushHistory),
 };
 

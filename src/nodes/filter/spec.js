@@ -42,6 +42,22 @@ const filterSpec = {
     return hasExpr ? [] : [{ nodeId: node.id, severity: 'warning', code: 'filter-empty', message: 'Filter has no condition' }];
   },
 
+  toPandas: (node, ctx) => {
+    const up = ctx.upstreamVars(node, 'df-in')[0] || '<source>';
+    const conds = node.data.conditions || (node.data.condition ? [{ op: 'WHERE', expr: node.data.condition }] : []);
+    let query = '';
+    let first = true;
+    for (const c of conds) {
+      const e = (c.expr || '').trim();
+      if (!e) continue;
+      query += (first ? '' : ` ${(c.op || 'and').toLowerCase()} `) + `(${e})`;
+      first = false;
+    }
+    if (!query) return `${ctx.var} = ${up}  # filter (no condition)`;
+    query = query.replace(/@(\w+)/g, '$1'); // @col → col
+    return `${ctx.var} = ${up}.query(${JSON.stringify(query)})`;
+  },
+
   useCallbacks: ({ setNodes, pushHistory }) => useFilterCallbacks(setNodes, pushHistory),
 };
 

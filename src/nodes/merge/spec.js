@@ -77,6 +77,17 @@ const mergeSpec = {
     return issues;
   },
 
+  toPandas: (node, ctx) => {
+    const left  = ctx.upstreamVars(node, 'left-in')[0]  || '<left>';
+    const right = ctx.upstreamVars(node, 'right-in')[0] || '<right>';
+    const how = node.data.joinType || 'inner';
+    const pairs = (node.data.keyPairs || []).filter((p) => p.left && p.right);
+    if (!pairs.length) return `${ctx.var} = pd.merge(${left}, ${right}, how='${how}')  # TODO: join keys`;
+    const lon = pairs.map((p) => `'${p.left}'`).join(', ');
+    const ron = pairs.map((p) => `'${p.right}'`).join(', ');
+    return `${ctx.var} = pd.merge(${left}, ${right}, how='${how}', left_on=[${lon}], right_on=[${ron}])`;
+  },
+
   useCallbacks: ({ setNodes, pushHistory }) => useMergeCallbacks(setNodes, pushHistory),
 };
 

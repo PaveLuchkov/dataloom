@@ -82,6 +82,14 @@ const dataframeSpec = {
     return changed ? { ...node.data, attributes: healed } : null;
   },
 
+  toPandas: (node, ctx) => {
+    // A result DF wired from an operator via df-in is that operator's output.
+    const ups = ctx.upstreamVars(node, 'df-in');
+    if (ups.length) return `${ctx.var} = ${ups[0]}`;
+    const cols = (node.data.attributes || []).map((a) => `'${a.name}'`).join(', ');
+    return `${ctx.var} = pd.DataFrame(columns=[${cols}])  # source table`;
+  },
+
   useCallbacks: ({ setNodes, setEdges, pushHistory }) =>
     useDataFrameCallbacks(setNodes, setEdges, pushHistory),
 };

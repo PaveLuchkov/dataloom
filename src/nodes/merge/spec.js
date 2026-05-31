@@ -14,10 +14,23 @@ const mergeSpec = {
   dagre: { width: config.dagreWidth, height: config.dagreHeight },
   make: config.make,
   companion: true,
+  mergeable: true, // a Merge result can itself feed another Merge
   connect: { acceptsColumns: false, dfLevel: config.connections },
   menu: config.menu, // merge has no menu entry (created via 2-DF selection)
   header: { editableLabel: true, code: true },
   component: MergeNode,
+
+  // Component renders the left/right input schemas for key-pair pickers.
+  inject: (node, edges, nodes) => {
+    const leftEdge  = edges.find((e) => e.target === node.id && e.targetHandle === 'left-in');
+    const rightEdge = edges.find((e) => e.target === node.id && e.targetHandle === 'right-in');
+    const leftNode  = leftEdge  ? nodes.find((n) => n.id === leftEdge.source)  : null;
+    const rightNode = rightEdge ? nodes.find((n) => n.id === rightEdge.source) : null;
+    return {
+      leftDF:  leftNode  ? { id: leftNode.id,  label: leftNode.data.label,  attributes: engine.computeNodeOutputAttributes(leftNode,  edges, nodes) } : null,
+      rightDF: rightNode ? { id: rightNode.id, label: rightNode.data.label, attributes: engine.computeNodeOutputAttributes(rightNode, edges, nodes) } : null,
+    };
+  },
 
   // ── Lineage ────────────────────────────────────────────────────────────────
   outputs: (node, edges, nodes) => {

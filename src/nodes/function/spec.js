@@ -1,4 +1,5 @@
 import * as engine from '../../utils/nodeOutputAttrs';
+import { uid } from '../../utils/uid';
 import config from './config';
 import FunctionNode from './index';
 import { useFunctionCallbacks } from './callbacks';
@@ -20,6 +21,17 @@ const functionSpec = {
   menu: config.menu,
   header: { editableLabel: true, code: true },
   component: FunctionNode,
+
+  // Component lists the DataFrames feeding its df-in handle (extend-mode source).
+  inject: (node, edges, nodes) => ({
+    connectedDFs: edges
+      .filter((e) => e.target === node.id && e.targetHandle === 'df-in')
+      .map((e) => {
+        const src = nodes.find((n) => n.id === e.source);
+        return src ? { sourceNodeId: src.id, sourceNodeLabel: src.data.label } : null;
+      })
+      .filter(Boolean),
+  }),
 
   // ── Lineage ────────────────────────────────────────────────────────────────
   outputs: (node, edges, nodes) => {
@@ -57,6 +69,36 @@ const functionSpec = {
 
   propagateDownstream: (node, colName, edges, nodes) =>
     engine.computeNodeOutputAttributes(node, edges, nodes).some((a) => a.name === colName) ? colName : null,
+
+  // ── State capabilities ───────────────────────────────────────────────────
+  // Paste: fresh ids for inputs and outputs (matches the legacy clone behavior).
+  clone: (data) => ({
+    ...data,
+    inputs:  (data.inputs  || []).map((i) => ({ ...i, id: uid() })),
+    outputs: (data.outputs || []).map((o) => ({ ...o, id: uid() })),
+  }),
+
+  // Refresh input attrType from live upstream, then cascade into the type of any
+  // output derived from that input (fromInputId).
+  refreshData: (node, edges, nodes) => {
+    let changed = false;
+    const inputs = (node.data.inputs || []).map((inp) => {
+      const srcNode = nodes.find((s) => s.id === inp.sourceNodeId);
+      if (!srcNode) return inp;
+      const liveAttr = engine.computeNodeOutputAttributes(srcNode, edges, nodes).find((a) => a.name === inp.attrName);
+      if (!liveAttr || liveAttr.type === inp.attrType) return inp;
+      changed = true;
+      return { ...inp, attrType: liveAttr.type };
+    });
+    const outputs = (node.data.outputs || []).map((o) => {
+      if (!o.fromInputId) return o;
+      const inp = inputs.find((i) => i.id === o.fromInputId);
+      if (!inp || inp.attrType === o.type) return o;
+      changed = true;
+      return { ...o, type: inp.attrType };
+    });
+    return changed ? { ...node.data, inputs, outputs } : null;
+  },
 
   useCallbacks: ({ setNodes, setEdges, pushHistory }) => useFunctionCallbacks(setNodes, setEdges, pushHistory),
 };

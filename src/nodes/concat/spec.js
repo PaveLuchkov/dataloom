@@ -18,6 +18,17 @@ const concatSpec = {
   header: { editableLabel: true, code: true },
   component: ConcatNode,
 
+  // Component lists the DataFrames feeding its df-in handle.
+  inject: (node, edges, nodes) => ({
+    connectedDFs: edges
+      .filter((e) => e.target === node.id && e.targetHandle === 'df-in')
+      .map((e) => {
+        const src = nodes.find((n) => n.id === e.source);
+        return src ? { sourceNodeId: src.id, sourceNodeLabel: src.data.label } : null;
+      })
+      .filter(Boolean),
+  }),
+
   // ── Lineage ────────────────────────────────────────────────────────────────
   outputs: (node, edges, nodes) => engine.getUpstreamAttrs(node.id, edges, nodes),
 

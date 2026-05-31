@@ -1,4 +1,5 @@
 import * as engine from '../../utils/nodeOutputAttrs';
+import { uid } from '../../utils/uid';
 import config from './config';
 import GroupByNode from './index';
 import { useGroupByCallbacks } from './callbacks';
@@ -63,6 +64,33 @@ const groupbySpec = {
       return si?.attrName === colName;
     });
     return agg?.outputName || null;
+  },
+
+  // ── State capabilities ───────────────────────────────────────────────────
+  // Paste: new ids for every input, remapped through groupByInputIds and aggs.
+  clone: (data) => {
+    const idMap = new Map();
+    const inputs = (data.inputs || []).map((inp) => { const nid = uid(); idMap.set(inp.id, nid); return { ...inp, id: nid }; });
+    return {
+      ...data,
+      inputs,
+      groupByInputIds: (data.groupByInputIds || []).map((id) => idMap.get(id) ?? id),
+      aggregations: (data.aggregations || []).map((a) => ({ ...a, id: uid(), inputId: idMap.get(a.inputId) ?? a.inputId })),
+    };
+  },
+
+  // Inputs freeze attrType at drag time; refresh from live upstream on graph change.
+  refreshData: (node, edges, nodes) => {
+    let changed = false;
+    const inputs = (node.data.inputs || []).map((inp) => {
+      const srcNode = nodes.find((s) => s.id === inp.sourceNodeId);
+      if (!srcNode) return inp;
+      const liveAttr = engine.computeNodeOutputAttributes(srcNode, edges, nodes).find((a) => a.name === inp.attrName);
+      if (!liveAttr || liveAttr.type === inp.attrType) return inp;
+      changed = true;
+      return { ...inp, attrType: liveAttr.type };
+    });
+    return changed ? { ...node.data, inputs } : null;
   },
 
   useCallbacks: ({ setNodes, setEdges, pushHistory }) => useGroupByCallbacks(setNodes, setEdges, pushHistory),

@@ -12,11 +12,14 @@ const filterSpec = {
   minimapColor: config.minimapColor,
   dagre: { width: config.dagreWidth, height: config.dagreHeight },
   make: config.make,
-  companion: true,
+  companion: false,
   connect: { acceptsColumns: false, dfLevel: config.connections },
   menu: config.menu,
   header: { editableLabel: true, code: true },
   component: FilterNode,
+
+  // Component needs the upstream column set for condition autocomplete.
+  inject: (node, edges, nodes) => ({ connectedAttrs: engine.getUpstreamAttrs(node.id, edges, nodes) }),
 
   // ── Lineage ────────────────────────────────────────────────────────────────
   outputs: (node, edges, nodes) => engine.getUpstreamAttrs(node.id, edges, nodes),

@@ -1,4 +1,5 @@
 import * as engine from '../../utils/nodeOutputAttrs';
+import { uid } from '../../utils/uid';
 import config from './config';
 import RenameNode from './index';
 import { useRenameCallbacks } from './callbacks';
@@ -17,6 +18,11 @@ const renameSpec = {
   menu: config.menu,
   header: { editableLabel: true, code: true },
   component: RenameNode,
+
+  // Component needs the upstream column set to populate the from/to dropdowns.
+  inject: (node, edges, nodes) => ({ connectedAttrs: engine.getUpstreamAttrs(node.id, edges, nodes) }),
+  // Paste: fresh ids for each mapping row.
+  clone: (data) => ({ ...data, mappings: (data.mappings || []).map((m) => ({ ...m, id: uid() })) }),
 
   // ── Lineage ────────────────────────────────────────────────────────────────
   outputs: (node, edges, nodes) => {

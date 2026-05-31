@@ -1,4 +1,5 @@
 import * as engine from '../../utils/nodeOutputAttrs';
+import { uid } from '../../utils/uid';
 import config from './config';
 import TransformNode from './index';
 import { useTransformCallbacks } from './callbacks';
@@ -18,6 +19,11 @@ const transformSpec = {
   menu: config.menu,
   header: { editableLabel: true, code: true },
   component: TransformNode,
+
+  // Component needs the upstream column set for op column pickers.
+  inject: (node, edges, nodes) => ({ connectedAttrs: engine.getUpstreamAttrs(node.id, edges, nodes) }),
+  // Paste: fresh ids for each op row.
+  clone: (data) => ({ ...data, ops: (data.ops || []).map((o) => ({ ...o, id: uid() })) }),
 
   // ── Lineage ────────────────────────────────────────────────────────────────
   outputs: (node, edges, nodes) => {

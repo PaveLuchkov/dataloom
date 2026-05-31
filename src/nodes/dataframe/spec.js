@@ -1,4 +1,5 @@
 import * as engine from '../../utils/nodeOutputAttrs';
+import { uid } from '../../utils/uid';
 import config from './config';
 import DataFrameNode from './index';
 import { useDataFrameCallbacks } from './callbacks';
@@ -6,7 +7,7 @@ import { useDataFrameCallbacks } from './callbacks';
 // First node type migrated to the NodeSpec contract. The lineage methods are
 // lifted verbatim from the dataFrameNode cases in utils/nodeOutputAttrs.js; the
 // characterization suite guards the move. traceUpstream re-enters the engine's
-// recursive traceColumnUpstream so it interops with not-yet-migrated types.
+// recursive traceColumnUpstream so it interops with the other types.
 
 const dataframeSpec = {
   type: config.type,
@@ -16,6 +17,8 @@ const dataframeSpec = {
   make: config.make,
   makeCompanion: config.makeCompanion,
   companion: false,
+  ownsColumns: true, // stores its columns explicitly (vs operators that compute them)
+  mergeable: true, // can be selected (with another) to spawn a Merge
   connect: { acceptsColumns: true, dfLevel: config.connections },
   menu: config.menu,
   header: { editableLabel: true, code: true },
@@ -40,6 +43,26 @@ const dataframeSpec = {
 
   propagateDownstream: (node, colName) =>
     (node.data.attributes || []).some((a) => a.name === colName) ? colName : null,
+
+  // ── State capabilities ───────────────────────────────────────────────────
+  // Paste: give every column a fresh id so the clone doesn't share handles.
+  clone: (data) => ({ ...data, attributes: (data.attributes || []).map((a) => ({ ...a, id: uid() })) }),
+
+  // Auto-heal: a broken column whose name reappears upstream is restored with
+  // the live type. Returns updated data, or null when nothing changed.
+  healBroken: (node, edges, nodes) => {
+    if (!(node.data.attributes || []).some((a) => a.broken)) return null;
+    const upstreamAttrs = engine.getUpstreamAttrs(node.id, edges, nodes);
+    if (!upstreamAttrs.length) return null;
+    const byName = new Map(upstreamAttrs.map((a) => [a.name, a]));
+    let changed = false;
+    const healed = (node.data.attributes || []).map((a) => {
+      if (!a.broken || !byName.has(a.name)) return a;
+      changed = true;
+      return { ...a, broken: false, type: byName.get(a.name).type };
+    });
+    return changed ? { ...node.data, attributes: healed } : null;
+  },
 
   useCallbacks: ({ setNodes, setEdges, pushHistory }) =>
     useDataFrameCallbacks(setNodes, setEdges, pushHistory),

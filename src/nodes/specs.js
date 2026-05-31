@@ -7,11 +7,15 @@ import { registerLineage } from './lineageRegistry';
 import dataframeSpec from './dataframe/spec';
 import filterSpec from './filter/spec';
 import concatSpec from './concat/spec';
+import renameSpec from './rename/spec';
+import transformSpec from './transform/spec';
 
 export const SPECS = {
   [dataframeSpec.type]: dataframeSpec,
   [filterSpec.type]: filterSpec,
   [concatSpec.type]: concatSpec,
+  [renameSpec.type]: renameSpec,
+  [transformSpec.type]: transformSpec,
 };
 
 for (const spec of Object.values(SPECS)) {

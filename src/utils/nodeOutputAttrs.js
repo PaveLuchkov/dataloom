@@ -35,36 +35,6 @@ export function computeNodeOutputAttributes(node, edges, nodes) {
       return [...sourceAttrs.filter((a) => !ownNames.has(a.name)), ...ownOutputs];
     }
 
-    case 'renameNode': {
-      const upstream = getUpstreamAttrs(node.id, edges, nodes);
-      const renamedMap = new Map(
-        (node.data.mappings || []).filter((m) => m.from && m.to).map((m) => [m.from, m])
-      );
-      return upstream.map((attr) => {
-        const mapping = renamedMap.get(attr.name);
-        return mapping ? { id: mapping.id, name: mapping.to, type: attr.type } : attr;
-      });
-    }
-
-    case 'transformNode': {
-      const upstream = getUpstreamAttrs(node.id, edges, nodes);
-      const typeOverrides = new Map();
-      const droppedCols = new Set();
-      const addedCols = [];
-      for (const op of (node.data.ops || [])) {
-        if (op.type === 'astype' && op.args?.col && op.args?.type_val) typeOverrides.set(op.args.col, op.args.type_val);
-        if (op.type === 'drop_column' && op.args?.col) droppedCols.add(op.args.col);
-        if (op.type === 'add_column' && op.args?.col) addedCols.push({ id: op.id, name: op.args.col, type: op.args.type_val || 'string' });
-      }
-      const upstreamNames = new Set(upstream.map((a) => a.name));
-      return [
-        ...upstream
-          .filter((a) => !droppedCols.has(a.name))
-          .map((a) => typeOverrides.has(a.name) ? { ...a, type: typeOverrides.get(a.name) } : a),
-        ...addedCols.filter((a) => !upstreamNames.has(a.name)),
-      ];
-    }
-
     case 'groupByNode': {
       const inputs = node.data.inputs || [];
       const keys = (node.data.groupByInputIds || [])
@@ -143,21 +113,6 @@ export function traceColumnUpstream(nodeId, colName, edges, nodes) {
       return step;
     }
 
-    case 'renameNode': {
-      // If colName matches a rename mapping's output, trace upstream with the original name.
-      // Otherwise treat the column as passing through unchanged.
-      const mapping = (node.data.mappings || []).find((m) => m.from && m.to && m.to === colName);
-      const sourceColName = mapping ? mapping.from : colName;
-      const step = { nodeId, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
-      for (const e of edges.filter((e) => e.target === nodeId && e.targetHandle === 'df-in')) {
-        const r = traceColumnUpstream(e.source, sourceColName, edges, nodes);
-        if (r) { step.upstream = r; break; }
-      }
-      // Pass-through column: only valid if found upstream; renamed column: always valid.
-      if (!mapping && !step.upstream) return null;
-      return step;
-    }
-
     case 'mergeNode': {
       const leftEdge  = edges.find((e) => e.target === nodeId && e.targetHandle === 'left-in');
       const rightEdge = edges.find((e) => e.target === nodeId && e.targetHandle === 'right-in');
@@ -217,20 +172,6 @@ export function traceColumnUpstream(nodeId, colName, edges, nodes) {
       return null;
     }
 
-    case 'transformNode': {
-      const ops = node.data.ops || [];
-      if (ops.some((op) => op.type === 'drop_column' && op.args?.col === colName)) return null;
-      if (ops.some((op) => op.type === 'add_column' && op.args?.col === colName)) {
-        return { nodeId, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null, createdHere: true };
-      }
-      const step = { nodeId, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
-      for (const e of edges.filter((e) => e.target === nodeId && e.targetHandle === 'df-in')) {
-        const r = traceColumnUpstream(e.source, colName, edges, nodes);
-        if (r) { step.upstream = r; break; }
-      }
-      return step;
-    }
-
     default:
       return null;
   }
@@ -268,15 +209,6 @@ function _propagateCol(targetNode, colName, edges, nodes) {
   switch (targetNode.type) {
     case 'dataFrameNode':
       return (targetNode.data.attributes || []).some((a) => a.name === colName) ? colName : null;
-
-    case 'transformNode':
-      return computeNodeOutputAttributes(targetNode, edges, nodes).some((a) => a.name === colName) ? colName : null;
-
-    case 'renameNode': {
-      const mapping = (targetNode.data.mappings || []).find((m) => m.from === colName);
-      if (mapping?.to) return mapping.to;
-      return computeNodeOutputAttributes(targetNode, edges, nodes).some((a) => a.name === colName) ? colName : null;
-    }
 
     case 'mergeNode':
       return computeNodeOutputAttributes(targetNode, edges, nodes).some((a) => a.name === colName) ? colName : null;

@@ -1,7 +1,7 @@
-// Importing the specs barrel registers the DataFrame lineage methods, so the
-// engine dispatches dataFrameNode through the spec here (whereas
-// utils/nodeOutputAttrs.test.js, which does not import it, exercises the switch
-// fallback — both must agree).
+// Importing the specs barrel registers every node type's lineage methods, so the
+// engine dispatches dataFrameNode through its spec here. The engine no longer has
+// any per-type switch — it is pure spec dispatch — so registration is what makes
+// computeNodeOutputAttributes/traceColumnUpstream resolve at all.
 import '../specs';
 import dataframeSpec from './spec';
 import { getLineage } from '../lineageRegistry';

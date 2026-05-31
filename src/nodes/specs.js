@@ -11,6 +11,7 @@ import renameSpec from './rename/spec';
 import transformSpec from './transform/spec';
 import mergeSpec from './merge/spec';
 import groupbySpec from './groupby/spec';
+import functionSpec from './function/spec';
 
 export const SPECS = {
   [dataframeSpec.type]: dataframeSpec,
@@ -20,6 +21,7 @@ export const SPECS = {
   [transformSpec.type]: transformSpec,
   [mergeSpec.type]: mergeSpec,
   [groupbySpec.type]: groupbySpec,
+  [functionSpec.type]: functionSpec,
 };
 
 for (const spec of Object.values(SPECS)) {

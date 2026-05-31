@@ -361,3 +361,38 @@ describe('trace cycle safety', () => {
     expect(() => traceColumnUpstream('C', 'x', edges, nodes)).not.toThrow();
   });
 });
+
+// ── Column-level lineage edges (DF→DF column drop) ───────────────────────────
+// Dragging a column from one DataFrame onto another creates a per-column edge
+// (`${srcAttrId}-source` → `${tgtAttrId}-target`), not a df-out/df-in edge.
+// Tracing must follow these in both directions.
+describe('column-level lineage edges', () => {
+  const colEdge = (source, srcAttrId, target, tgtAttrId) => ({
+    id: `c-${source}-${target}`, source, sourceHandle: `${srcAttrId}-source`,
+    target, targetHandle: `${tgtAttrId}-target`, type: 'columnEdge',
+  });
+
+  test('traceColumnUpstream follows a column edge back to the source DataFrame', () => {
+    const a = df('A', 'src', [attr('a1', 'x', 'int')]);
+    const b = df('B', 'dst', [attr('b1', 'x', 'int')]);
+    const edges = [colEdge('A', 'a1', 'B', 'b1')];
+    const chain = flattenUpstream(traceColumnUpstream('B', 'x', edges, [a, b]));
+    expect(chain.map((s) => s.nodeId)).toEqual(['A', 'B']);
+  });
+
+  test('traceColumnDownstream follows a column edge forward to the target DataFrame', () => {
+    const a = df('A', 'src', [attr('a1', 'x', 'int')]);
+    const b = df('B', 'dst', [attr('b1', 'x', 'int')]);
+    const edges = [colEdge('A', 'a1', 'B', 'b1')];
+    const out = traceColumnDownstream('A', 'x', edges, [a, b]);
+    expect(out.map((s) => s.nodeId)).toEqual(['B']);
+  });
+
+  test('a column edge to a renamed target column resolves the target column name', () => {
+    const a = df('A', 'src', [attr('a1', 'x', 'int')]);
+    const b = df('B', 'dst', [attr('b1', 'x_copy', 'int')]);
+    const edges = [colEdge('A', 'a1', 'B', 'b1')];
+    const out = traceColumnDownstream('A', 'x', edges, [a, b]);
+    expect(out[0]).toMatchObject({ nodeId: 'B', colName: 'x_copy' });
+  });
+});

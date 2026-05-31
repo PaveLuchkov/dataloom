@@ -28,9 +28,27 @@ const dataframeSpec = {
   outputs: (node) => node.data.attributes || [],
 
   traceUpstream: (node, colName, edges, nodes, visited) => {
-    if (!(node.data.attributes || []).some((a) => a.name === colName)) return null;
+    const thisAttr = (node.data.attributes || []).find((a) => a.name === colName);
+    if (!thisAttr) return null;
     const step = { nodeId: node.id, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
-    // A result/companion DF traces back through its incoming df-in edge.
+
+    // 1) Explicit per-column wire (a column dragged from another node onto this
+    // one). The source handle encodes the upstream attr id; resolve its name and
+    // trace from there.
+    const colEdge = edges.find(
+      (e) => e.target === node.id && e.targetHandle === `${thisAttr.id}-target` && e.sourceHandle?.endsWith('-source')
+    );
+    if (colEdge) {
+      const src = nodes.find((n) => n.id === colEdge.source);
+      if (src) {
+        const srcAttrId = colEdge.sourceHandle.slice(0, -'-source'.length);
+        const srcAttr = engine.computeNodeOutputAttributes(src, edges, nodes).find((a) => a.id === srcAttrId);
+        step.upstream = engine.traceColumnUpstream(src.id, srcAttr ? srcAttr.name : colName, edges, nodes, visited);
+      }
+      return step;
+    }
+
+    // 2) A result/companion DF traces back through its incoming df-in edge.
     const inEdge = edges.find(
       (e) => e.target === node.id && e.targetHandle === 'df-in' && e.sourceHandle === 'df-out'
     );

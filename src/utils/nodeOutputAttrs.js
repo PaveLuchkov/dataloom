@@ -75,10 +75,8 @@ export function traceColumnDownstream(nodeId, colName, edges, nodes, visited = n
   visited.add(key);
 
   const results = [];
-  // Follow all df-out edges from this node
-  const outEdges = edges.filter((e) => e.source === nodeId && e.sourceHandle === 'df-out');
-
-  for (const e of outEdges) {
+  // 1) df-out edges: the column propagates through whatever the target computes.
+  for (const e of edges.filter((e) => e.source === nodeId && e.sourceHandle === 'df-out')) {
     const target = nodes.find((n) => n.id === e.target);
     if (!target) continue;
     const propagated = _propagateCol(target, colName, edges, nodes);
@@ -90,6 +88,32 @@ export function traceColumnDownstream(nodeId, colName, edges, nodes, visited = n
       nodeLabel: target.data.label,
       downstream: traceColumnDownstream(target.id, propagated, edges, nodes, visited),
     });
+  }
+
+  // 2) Explicit per-column wires (a column dragged onto another node). The source
+  // handle encodes the attr id; only follow the edge for the column being traced.
+  const node = nodes.find((n) => n.id === nodeId);
+  if (node) {
+    const srcAttrs = computeNodeOutputAttributes(node, edges, nodes);
+    for (const e of edges) {
+      if (e.source !== nodeId || !e.sourceHandle?.endsWith('-source')) continue;
+      const srcAttrId = e.sourceHandle.slice(0, -'-source'.length);
+      const srcAttr = srcAttrs.find((a) => a.id === srcAttrId);
+      if (!srcAttr || srcAttr.name !== colName) continue;
+      const target = nodes.find((n) => n.id === e.target);
+      if (!target) continue;
+      // Resolve the target column name from its `-target` handle attr id.
+      const tgtAttrId = e.targetHandle?.endsWith('-target') ? e.targetHandle.slice(0, -'-target'.length) : null;
+      const tgtAttr = computeNodeOutputAttributes(target, edges, nodes).find((a) => a.id === tgtAttrId);
+      const targetColName = tgtAttr ? tgtAttr.name : colName;
+      results.push({
+        nodeId: target.id,
+        colName: targetColName,
+        nodeType: target.type,
+        nodeLabel: target.data.label,
+        downstream: traceColumnDownstream(target.id, targetColName, edges, nodes, visited),
+      });
+    }
   }
   return results;
 }

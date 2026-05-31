@@ -93,10 +93,11 @@ src/
 │       └── callbacks.js          ← useCommentCallbacks(setNodes, pushHistory)
 ├── utils/
 │   ├── uid.js                    ← shared ID counter (Date.now() seed)
-│   ├── nodeOutputAttrs.js        ← SINGLE SOURCE OF TRUTH for column output per node type:
+│   ├── nodeOutputAttrs.js        ← thin lineage DISPATCHER (per-type rules live in each
+│   │                                node's spec, registered via nodes/specs.js):
 │   │                                computeNodeOutputAttributes(node, edges, nodes) → Attr[]
-│   │                                  functionNode: if extendMode, prepends source DF attrs
-│   │                                  transformNode: handles add_column op (appends new attr)
+│   │                                  → spec.outputs (functionNode extendMode prepends
+│   │                                    source attrs; transformNode add_column appends)
 │   │                                getUpstreamAttrs(nodeId, edges, nodes, handleId?) → Attr[]
 │   │                                inferAggType(func, inputType) → type string
 │   │                                traceColumnUpstream(nodeId, colName, edges, nodes) → chain | null
@@ -134,10 +135,11 @@ src/
 │   │                                copyToClipboard / pasteFromClipboard (Ctrl+Shift+C/V),
 │   │                                copyShareUrl (pako deflate → base64url → URL hash),
 │   │                                loadFromUrlHash (inflate on mount)
-│   └── useLineageState.js        ← state + history; composes per-type callback hooks;
-│                                    COMPANION_TYPES = mergeNode | groupByNode | functionNode
-│                                      | renameNode | transformNode;
-│                                    addNodeOfType auto-creates companion DF for operator types;
+│   └── useLineageState.js        ← state + history; spec-driven (iterates SPEC_LIST,
+│                                    no per-type switches). companion-producing types
+│                                    are those with spec.companion = true (merge,
+│                                    groupBy, function, rename, transform);
+│                                    addNodeOfType auto-creates companion DF for them;
 │                                    DELETE KEY — broken column logic:
 │                                      operator deleted → all columns of connected df-out DFs broken;
 │                                      DF deleted → specific attrs wired via column edges broken;
@@ -310,7 +312,9 @@ return [...sourceAttrs.filter(a => !ownNames.has(a.name)), ...ownOutputs];
 | `attr.broken` | DataFrameNode attribute | Transient: source lost; heals on reconnect |
 | `inp.broken` | GroupBy/Function input | Transient: source node deleted; user re-drags |
 
-`COMPANION_TYPES = new Set(['mergeNode', 'groupByNode', 'functionNode', 'renameNode', 'transformNode'])`
+Companion-producing types are declared per-spec via `spec.companion = true`
+(merge, groupBy, function, rename, transform). The old hardcoded
+`COMPANION_TYPES` set in `useLineageState` has been removed.
 
 ### Share URL encoding (`useLineagePersistence`)
 ```js
@@ -352,15 +356,34 @@ Extras per node type:
 | all nodes | `onTraceColumn`, `traceColName` | injected in App.jsx `trackedNodes` memo |
 | all nodes | all callbacks | `callbacks.current` ref via `attachCallbacks` |
 
-### Adding a new node type (the full recipe)
-1. `src/nodes/<type>/config.js` — define colors, `make()`, `menu`, `connections`
-2. `src/nodes/<type>/callbacks.js` — export `use<Type>Callbacks` hook
-3. `src/nodes/<type>/index.jsx` — React component with `df-in`/`df-out` Handles at `top: 14`
-4. One line in `registry.js`: `{ config: myConfig, component: MyNode }`
-5. Import and compose callbacks in `useLineageState.js`
-6. Add case to `computeNodeOutputAttributes` in `nodeOutputAttrs.js`
-7. If operator → add to `COMPANION_TYPES` in `useLineageState.js`
-8. Add case to `traceColumnUpstream` and `_propagateCol` in `nodeOutputAttrs.js`
+### Adding a new node type (the spec-driven recipe)
+
+As of the schema-driven refactor, a node type is **one `spec` module + one list
+entry** — the engine and `useLineageState` iterate the registry instead of
+switching on `node.type`, so there are no longer per-type cases to add in
+`nodeOutputAttrs.js` or `useLineageState.js`.
+
+1. `src/nodes/<type>/{config.js, callbacks.js, index.jsx}` — same triad as before
+   (config: `make()`/`menu`/`connections`/dagre sizes/colors; callbacks:
+   `use<Type>Callbacks`; component: `df-in`/`df-out` Handles at `top: 14`).
+2. `src/nodes/<type>/spec.js` — the NodeSpec. Declares `type`, `theme`,
+   `component`, `make`, `connect`, `header`, `useCallbacks(ctx)`, and the
+   capabilities the engine/state layer read (see below). Add the lineage methods
+   `outputs` / `traceUpstream` / `propagateDownstream` (omit them entirely for a
+   non-data node like Comment — a type with no registered lineage produces no
+   columns).
+3. Add one import + one `SPECS` entry in `src/nodes/specs.js`, and one entry in
+   `src/nodes/registry.js` (`{ config, component }`, still used for
+   `nodeTypes`/minimap/dagre/`ADDABLE_NODES`/`isValidConnection`).
+
+**Spec capabilities consumed by `useLineageState`** (all optional — omit to opt out):
+`companion` (operator auto-spawns a result DF), `clone(data)` (paste id remap),
+`inject(node,edges,nodes)` (extra component props), `refreshData(node,edges,nodes)`
+(frozen input/output type sync), `healBroken(node,edges,nodes)` (DataFrame
+auto-heal), `ownsColumns` (stores its columns explicitly — drives the
+delete-break branch), `mergeable` (selectable to spawn a Merge). The engine
+(`nodeOutputAttrs.js`) is now a thin dispatcher over `outputs` / `traceUpstream` /
+`propagateDownstream`; there is no switch fallback.
 
 ### Canvas Tabs storage layout
 ```

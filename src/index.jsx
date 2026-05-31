@@ -1,4 +1,5 @@
 import './index.css';
+import './nodes/specs'; // registers migrated node specs with the lineage engine
 import App from './App';
 import React from 'react';
 import ReactDOM from 'react-dom/client';

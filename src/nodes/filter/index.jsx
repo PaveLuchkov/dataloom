@@ -35,11 +35,11 @@ const OP_STYLES = {
 export default function FilterNode({ id, data }) {
   const {
     label, conditions: rawConditions, condition: legacyCondition,
-    connectedAttrs = [],
+    connectedAttrs = [], companionId,
     onLabelChange,
     onAddFilterCondition, onDeleteFilterCondition,
     onUpdateFilterExpr, onToggleFilterOp,
-    onCodeChange, onStageChange,
+    onCodeChange, onStageChange, onCreateCompanion,
     trackerHighlight, code, stage,
   } = data;
 
@@ -100,6 +100,15 @@ export default function FilterNode({ id, data }) {
           style={{ fontSize: 10, color: '#fb923c', opacity: codeOpen ? 1 : 0.4 }}
         >
           {codeOpen ? '[/]' : '</>'}
+        </button>
+        <button
+          onClick={(e) => { stop(e); if (!companionId) onCreateCompanion(id); }}
+          onMouseDown={stop}
+          title={companionId ? 'Output companion exists' : 'Create output DataFrame'}
+          className="flex-shrink-0 select-none text-xs font-mono transition-colors"
+          style={{ color: companionId ? '#fb923c' : '#7c2d12' }}
+        >
+          {companionId ? '→●' : '→○'}
         </button>
       </div>
 

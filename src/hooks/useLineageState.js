@@ -2,52 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNodesState, useEdgesState, addEdge, MarkerType } from 'reactflow';
 import { getActiveCanvasKey } from '../constants';
 import { uid } from '../utils/uid';
-import { NODE_REGISTRY } from '../nodes/registry';
-import { computeNodeOutputAttributes, getUpstreamAttrs } from '../utils/nodeOutputAttrs';
-import { useDataFrameCallbacks }  from '../nodes/dataframe/callbacks';
-import { useMergeCallbacks }      from '../nodes/merge/callbacks';
-import { useFunctionCallbacks }   from '../nodes/function/callbacks';
-import { useFilterCallbacks }     from '../nodes/filter/callbacks';
-import { useGroupByCallbacks }    from '../nodes/groupby/callbacks';
-import { useCommentCallbacks }    from '../nodes/comment/callbacks';
-import { useRenameCallbacks }     from '../nodes/rename/callbacks';
-import { useConcatCallbacks }     from '../nodes/concat/callbacks';
-import { useTransformCallbacks }  from '../nodes/transform/callbacks';
+import { SPEC_LIST, getSpec } from '../nodes/specs';
+import { computeNodeOutputAttributes } from '../utils/nodeOutputAttrs';
 import dataframeConfig from '../nodes/dataframe/config';
 import mergeConfig     from '../nodes/merge/config';
 
-// ── Node clone helpers ─────────────────────────────────────────────────────
-// Remaps internal data IDs so pasted nodes don't share handles with originals.
-
-function cloneNodeData(type, data) {
-  if (type === 'dataFrameNode') {
-    return { ...data, attributes: (data.attributes || []).map((a) => ({ ...a, id: uid() })) };
-  }
-  if (type === 'functionNode') {
-    return {
-      ...data,
-      inputs:  (data.inputs  || []).map((i) => ({ ...i, id: uid() })),
-      outputs: (data.outputs || []).map((o) => ({ ...o, id: uid() })),
-    };
-  }
-  if (type === 'groupByNode') {
-    const idMap = new Map();
-    const newInputs = (data.inputs || []).map((inp) => { const nid = uid(); idMap.set(inp.id, nid); return { ...inp, id: nid }; });
-    return {
-      ...data,
-      inputs: newInputs,
-      groupByInputIds: (data.groupByInputIds || []).map((id) => idMap.get(id) ?? id),
-      aggregations: (data.aggregations || []).map((a) => ({ ...a, id: uid(), inputId: idMap.get(a.inputId) ?? a.inputId })),
-    };
-  }
-  if (type === 'renameNode') {
-    return { ...data, mappings: (data.mappings || []).map((m) => ({ ...m, id: uid() })) };
-  }
-  if (type === 'transformNode') {
-    return { ...data, ops: (data.ops || []).map((o) => ({ ...o, id: uid() })) };
-  }
-  return { ...data };
-}
+// This hook owns nodes/edges + undo history and is now spec-driven: per-type
+// behavior lives in each node's spec (src/nodes/<type>/spec.js), and the loops
+// here iterate the registry rather than switching on node.type. The capabilities
+// consumed below:
+//   spec.useCallbacks(ctx) → per-type handlers (composed generically)
+//   spec.inject(node,...)  → extra data the component needs (connectedAttrs, leftDF, …)
+//   spec.companion         → operator auto-spawns a result DataFrame
+//   spec.clone(data)       → paste remaps internal ids
+//   spec.refreshData(...)  → keep frozen input/output types in sync with upstream
+//   spec.healBroken(...)   → restore broken columns when a source reappears
+//   spec.ownsColumns       → stores columns explicitly (drives delete-break scoping)
+//   spec.mergeable         → selectable to spawn a Merge
 
 // ── Demo state ─────────────────────────────────────────────────────────────
 
@@ -86,8 +57,6 @@ const makeCompanionEdge = (operatorId, companionId) => ({
   markerEnd: { type: MarkerType.ArrowClosed, color: '#334155' },
   data: { isCompanionEdge: true },
 });
-
-const COMPANION_TYPES = new Set(['mergeNode', 'groupByNode', 'functionNode', 'renameNode', 'transformNode']);
 
 // ── Hook ───────────────────────────────────────────────────────────────────
 
@@ -146,17 +115,16 @@ export function useLineageState() {
     }
   }
 
-  // ── Per-type callbacks ────────────────────────────────────────────────────
+  // ── Per-type callbacks (composed from the spec registry) ───────────────────
+  // SPEC_LIST is a module-constant array, so iterating it calls the same hooks in
+  // the same order every render — the Rules of Hooks invariant holds.
 
-  const dfCbs  = useDataFrameCallbacks(setNodes, setEdges, pushHistory);
-  const mgCbs  = useMergeCallbacks(setNodes, pushHistory);
-  const fnCbs  = useFunctionCallbacks(setNodes, setEdges, pushHistory);
-  const ftCbs  = useFilterCallbacks(setNodes, pushHistory);
-  const gbCbs  = useGroupByCallbacks(setNodes, setEdges, pushHistory);
-  const cmCbs  = useCommentCallbacks(setNodes, pushHistory);
-  const rnCbs  = useRenameCallbacks(setNodes, pushHistory);
-  const ctCbs  = useConcatCallbacks();
-  const trCbs  = useTransformCallbacks(setNodes, pushHistory);
+  const ctx = { setNodes, setEdges, pushHistory };
+  const composedCallbacks = {};
+  for (const spec of SPEC_LIST) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    Object.assign(composedCallbacks, spec.useCallbacks ? spec.useCallbacks(ctx) : {});
+  }
 
   const onLabelChange = useCallback((nodeId, label) => {
     pushHistory();
@@ -174,53 +142,28 @@ export function useLineageState() {
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
+  // Each spec optionally injects extra data its component needs (connected
+  // columns/DataFrames, merge input schemas, …) — replaces the old per-type switch.
   const nodesWithCallbacks = useMemo(() => {
     const enriched = nodes.map((n) => {
-      if (n.type === 'functionNode' || n.type === 'concatNode') {
-        const connectedDFs = edges
-          .filter((e) => e.target === n.id && e.targetHandle === 'df-in')
-          .map((e) => {
-            const src = nodes.find((nd) => nd.id === e.source);
-            return src ? { sourceNodeId: src.id, sourceNodeLabel: src.data.label } : null;
-          })
-          .filter(Boolean);
-        return { ...n, data: { ...n.data, connectedDFs } };
-      }
-      if (n.type === 'filterNode' || n.type === 'renameNode' || n.type === 'transformNode') {
-        const connectedAttrs = getUpstreamAttrs(n.id, edges, nodes);
-        return { ...n, data: { ...n.data, connectedAttrs } };
-      }
-      if (n.type === 'mergeNode') {
-        const leftEdge  = edges.find((e) => e.target === n.id && e.targetHandle === 'left-in');
-        const rightEdge = edges.find((e) => e.target === n.id && e.targetHandle === 'right-in');
-        const leftNode  = leftEdge  ? nodes.find((nd) => nd.id === leftEdge.source)  : null;
-        const rightNode = rightEdge ? nodes.find((nd) => nd.id === rightEdge.source) : null;
-        return {
-          ...n,
-          data: {
-            ...n.data,
-            leftDF:  leftNode  ? { id: leftNode.id,  label: leftNode.data.label,  attributes: computeNodeOutputAttributes(leftNode,  edges, nodes) } : null,
-            rightDF: rightNode ? { id: rightNode.id, label: rightNode.data.label, attributes: computeNodeOutputAttributes(rightNode, edges, nodes) } : null,
-          },
-        };
-      }
-      return n;
+      const inject = getSpec(n.type)?.inject;
+      return inject ? { ...n, data: { ...n.data, ...inject(n, edges, nodes) } } : n;
     });
     return attachCallbacks(enriched, callbacks.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges]);
 
-  // Sync attributes of companion DFs from their operator's output.
-  // Only applies to DFs marked with _companionOf — regular DFs connected downstream
-  // are NOT overwritten so the user can freely edit them.
+  // Sync attributes of companion DFs from their operator's output. Only applies
+  // to DFs marked with _companionOf whose upstream is a companion-producing
+  // operator — regular downstream DFs are left editable.
   useEffect(() => {
     let changed = false;
     const updated = nodes.map((n) => {
-      if (n.type !== 'dataFrameNode' || !n.data._companionOf) return n;
+      if (!n.data._companionOf) return n;
       const inEdge = edges.find((e) => e.target === n.id && e.targetHandle === 'df-in' && e.sourceHandle === 'df-out');
       if (!inEdge) return n;
       const src = nodes.find((nd) => nd.id === inEdge.source);
-      if (!src || src.type === 'dataFrameNode') return n;
+      if (!src || !getSpec(src.type)?.companion) return n;
       const computed = computeNodeOutputAttributes(src, edges, nodes);
       if (JSON.stringify(n.data.attributes) === JSON.stringify(computed)) return n;
       changed = true;
@@ -229,64 +172,30 @@ export function useLineageState() {
     if (changed) setNodes(updated);
   }, [nodes, edges, setNodes]);
 
-  // Refresh attrType in GroupByNode and FunctionNode inputs when upstream schema changes.
-  // These nodes freeze attrType at drag time — this keeps them live without requiring re-drag.
+  // Refresh frozen input/output types from live upstream schema (GroupBy/Function).
   useEffect(() => {
     let anyChanged = false;
     const updated = nodes.map((n) => {
-      if (n.type !== 'groupByNode' && n.type !== 'functionNode') return n;
-      let nodeChanged = false;
-
-      const refreshedInputs = (n.data.inputs || []).map((inp) => {
-        const srcNode = nodes.find((s) => s.id === inp.sourceNodeId);
-        if (!srcNode) return inp;
-        const srcAttrs = computeNodeOutputAttributes(srcNode, edges, nodes);
-        const liveAttr = srcAttrs.find((a) => a.name === inp.attrName);
-        if (!liveAttr || liveAttr.type === inp.attrType) return inp;
-        nodeChanged = true;
-        return { ...inp, attrType: liveAttr.type };
-      });
-
-      if (n.type === 'functionNode') {
-        const refreshedOutputs = (n.data.outputs || []).map((o) => {
-          if (!o.fromInputId) return o;
-          const inp = refreshedInputs.find((i) => i.id === o.fromInputId);
-          if (!inp || inp.attrType === o.type) return o;
-          nodeChanged = true;
-          return { ...o, type: inp.attrType };
-        });
-        if (!nodeChanged) return n;
-        anyChanged = true;
-        return { ...n, data: { ...n.data, inputs: refreshedInputs, outputs: refreshedOutputs } };
-      }
-
-      if (!nodeChanged) return n;
+      const refresh = getSpec(n.type)?.refreshData;
+      if (!refresh) return n;
+      const newData = refresh(n, edges, nodes);
+      if (!newData) return n;
       anyChanged = true;
-      return { ...n, data: { ...n.data, inputs: refreshedInputs } };
+      return { ...n, data: newData };
     });
     if (anyChanged) setNodes(updated);
   }, [nodes, edges, setNodes]);
 
-  // Auto-heal broken attributes: when a DF with broken columns gains upstream sources,
-  // attributes whose names match are restored (broken: false) with the live type.
+  // Auto-heal broken columns when a matching-named upstream source reappears.
   useEffect(() => {
     let anyChanged = false;
     const updated = nodes.map((n) => {
-      if (n.type !== 'dataFrameNode') return n;
-      const hasBroken = (n.data.attributes || []).some((a) => a.broken);
-      if (!hasBroken) return n;
-      const upstreamAttrs = getUpstreamAttrs(n.id, edges, nodes);
-      if (!upstreamAttrs.length) return n;
-      const byName = new Map(upstreamAttrs.map((a) => [a.name, a]));
-      let nodeChanged = false;
-      const healed = (n.data.attributes || []).map((a) => {
-        if (!a.broken || !byName.has(a.name)) return a;
-        nodeChanged = true;
-        return { ...a, broken: false, type: byName.get(a.name).type };
-      });
-      if (!nodeChanged) return n;
+      const heal = getSpec(n.type)?.healBroken;
+      if (!heal) return n;
+      const newData = heal(n, edges, nodes);
+      if (!newData) return n;
       anyChanged = true;
-      return { ...n, data: { ...n.data, attributes: healed } };
+      return { ...n, data: newData };
     });
     if (anyChanged) setNodes(updated);
   }, [nodes, edges, setNodes]);
@@ -306,7 +215,7 @@ export function useLineageState() {
   }, [nodes, setNodes]);
 
   const selectedDFs = useMemo(
-    () => nodes.filter((n) => n.selected && (n.type === 'dataFrameNode' || n.type === 'mergeNode')),
+    () => nodes.filter((n) => n.selected && getSpec(n.type)?.mergeable),
     [nodes]
   );
 
@@ -354,8 +263,9 @@ export function useLineageState() {
         id: uid(),
         selected: true,
         position: { x: n.position.x + offset, y: n.position.y + offset },
-        // Strip companionId so the cloned operator doesn't reference the original's companion
-        data: { ...cloneNodeData(n.type, n.data), companionId: undefined },
+        // Spec.clone remaps internal ids; strip companionId so the clone doesn't
+        // reference the original's companion DF.
+        data: { ...(getSpec(n.type)?.clone?.(n.data) ?? { ...n.data }), companionId: undefined },
       }));
       setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), ...pasted]);
       return;
@@ -365,19 +275,18 @@ export function useLineageState() {
       setEdges((eds) => eds.filter((ed) => !ed.selected));
       const selected = nodesRef.current.filter((n) => n.selected);
       const toDelete = new Set(selected.map((n) => n.id));
-      // Any DF directly connected to a deleted operator's df-out has its columns marked broken
-      // so downstream chains stay intact. This works regardless of companion status, so the
-      // behaviour persists through reconnection cycles (delete → reconnect → delete again).
-      // toOrphan: DF ids whose ALL columns go broken (operator deleted)
-      // brokenAttrIds: specific attribute ids that go broken (source DF deleted)
+      // A column-owning DataFrame deletion breaks specific downstream attributes
+      // (via column edges); any other (operator) deletion orphans the whole
+      // downstream DataFrame it feeds via df-out. Driven by spec.ownsColumns so it
+      // stays correct as new node types are added.
       const toOrphan = new Set();           // DF ids: all columns go broken
       const brokenAttrIds = new Set();      // specific DF attr ids go broken
-      const brokenNodeInputs = new Map();   // nodeId → Set<inputId> for GroupBy/Function
+      const brokenNodeInputs = new Map();   // nodeId → Set<inputId> for column-input nodes
       for (const n of selected) {
-        if (n.type !== 'dataFrameNode') {
+        if (!getSpec(n.type)?.ownsColumns) {
           for (const e of edgesRef.current) {
             if (e.source !== n.id || e.sourceHandle !== 'df-out') continue;
-            const target = nodesRef.current.find((nd) => nd.id === e.target && nd.type === 'dataFrameNode');
+            const target = nodesRef.current.find((nd) => nd.id === e.target && getSpec(nd.type)?.ownsColumns);
             if (target) toOrphan.add(target.id);
           }
         } else {
@@ -387,10 +296,10 @@ export function useLineageState() {
             if (targetAttrId) brokenAttrIds.add(targetAttrId);
           }
         }
-        // GroupBy and FunctionNode inputs referencing this deleted node
+        // Any node carrying column-level inputs that reference this deleted node.
         for (const nd of nodesRef.current) {
-          if (nd.type !== 'groupByNode' && nd.type !== 'functionNode') continue;
-          const hit = (nd.data.inputs || []).filter((inp) => inp.sourceNodeId === n.id);
+          if (!Array.isArray(nd.data.inputs)) continue;
+          const hit = nd.data.inputs.filter((inp) => inp.sourceNodeId === n.id);
           if (!hit.length) continue;
           if (!brokenNodeInputs.has(nd.id)) brokenNodeInputs.set(nd.id, new Set());
           for (const inp of hit) brokenNodeInputs.get(nd.id).add(inp.id);
@@ -401,40 +310,41 @@ export function useLineageState() {
           .filter((n) => !toDelete.has(n.id))
           .map((n) => {
             const isOrphan = toOrphan.has(n.id);
-            const hasAttrHits = n.type === 'dataFrameNode' &&
+            const hasAttrHits = getSpec(n.type)?.ownsColumns &&
               (n.data.attributes || []).some((a) => brokenAttrIds.has(a.id));
             const inputHits = brokenNodeInputs.get(n.id);
-            if (!isOrphan && !hasAttrHits && !inputHits) return n;
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                _companionOf: toDelete.has(n.data._companionOf) ? undefined : n.data._companionOf,
-                attributes: (n.data.attributes || []).map((a) => ({
-                  ...a,
-                  broken: isOrphan || brokenAttrIds.has(a.id) ? true : a.broken,
-                })),
-                inputs: inputHits
-                  ? (n.data.inputs || []).map((inp) =>
-                      inputHits.has(inp.id) ? { ...inp, broken: true } : inp
-                    )
-                  : n.data.inputs,
-              },
-            };
+            const losesCompanion = n.data._companionOf && toDelete.has(n.data._companionOf);
+            if (!isOrphan && !hasAttrHits && !inputHits && !losesCompanion) return n;
+            // Scope each write to fields the node actually has (code-review fix):
+            // don't fabricate an empty attributes array on operators, etc.
+            const data = { ...n.data };
+            if (losesCompanion) data._companionOf = undefined;
+            if (isOrphan || hasAttrHits) {
+              data.attributes = (n.data.attributes || []).map((a) => ({
+                ...a,
+                broken: isOrphan || brokenAttrIds.has(a.id) ? true : a.broken,
+              }));
+            }
+            if (inputHits) {
+              data.inputs = (n.data.inputs || []).map((inp) =>
+                inputHits.has(inp.id) ? { ...inp, broken: true } : inp
+              );
+            }
+            return { ...n, data };
           })
       );
       setEdges((eds) => eds.filter((e) => !toDelete.has(e.source) && !toDelete.has(e.target)));
     }
   }, [undo, redo, pushHistory, setEdges, setNodes]);
 
-  // Generic add — looks up config by type, calls config.make()
-  // Operator nodes (merge/groupby/function) auto-spawn a companion DF to the right.
+  // Generic add — looks up the spec by type, calls spec.make().
+  // Operators (spec.companion) auto-spawn a companion result DF to the right.
   const addNodeOfType = useCallback((type, x, y, dataOverrides) => {
-    const entry = NODE_REGISTRY.find((e) => e.config.type === type);
-    if (!entry) return;
+    const spec = getSpec(type);
+    if (!spec) return;
     pushHistory();
-    const newNode = entry.config.make(x, y, dataOverrides);
-    if (COMPANION_TYPES.has(type)) {
+    const newNode = spec.make(x, y, dataOverrides);
+    if (spec.companion) {
       const companionId = uid();
       const label = newNode.data.label ? `${newNode.data.label}_output` : 'output';
       const companion = dataframeConfig.makeCompanion(companionId, newNode.id, x + 420, y, [], label);
@@ -478,8 +388,7 @@ export function useLineageState() {
   // All per-frame callbacks bundled for nodesWithCallbacks injection
   callbacks.current = {
     onLabelChange, onCodeChange, onStageChange, onCreateCompanion,
-    ...dfCbs, ...mgCbs, ...fnCbs, ...ftCbs, ...gbCbs, ...cmCbs,
-    ...rnCbs, ...ctCbs, ...trCbs,
+    ...composedCallbacks,
   };
 
   const createMerge = useCallback((dfs) => {

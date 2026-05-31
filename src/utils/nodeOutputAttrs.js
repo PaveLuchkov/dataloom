@@ -35,10 +35,6 @@ export function computeNodeOutputAttributes(node, edges, nodes) {
       return [...sourceAttrs.filter((a) => !ownNames.has(a.name)), ...ownOutputs];
     }
 
-    case 'filterNode':
-    case 'concatNode':
-      return getUpstreamAttrs(node.id, edges, nodes);
-
     case 'renameNode': {
       const upstream = getUpstreamAttrs(node.id, edges, nodes);
       const renamedMap = new Map(
@@ -143,16 +139,6 @@ export function traceColumnUpstream(nodeId, colName, edges, nodes) {
       if (inEdge) {
         const src = nodes.find((n) => n.id === inEdge.source);
         if (src) step.upstream = traceColumnUpstream(src.id, colName, edges, nodes);
-      }
-      return step;
-    }
-
-    case 'filterNode':
-    case 'concatNode': {
-      const step = { nodeId, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
-      for (const e of edges.filter((e) => e.target === nodeId && e.targetHandle === 'df-in')) {
-        const r = traceColumnUpstream(e.source, colName, edges, nodes);
-        if (r) { step.upstream = r; break; }
       }
       return step;
     }
@@ -283,8 +269,6 @@ function _propagateCol(targetNode, colName, edges, nodes) {
     case 'dataFrameNode':
       return (targetNode.data.attributes || []).some((a) => a.name === colName) ? colName : null;
 
-    case 'filterNode':
-    case 'concatNode':
     case 'transformNode':
       return computeNodeOutputAttributes(targetNode, edges, nodes).some((a) => a.name === colName) ? colName : null;
 

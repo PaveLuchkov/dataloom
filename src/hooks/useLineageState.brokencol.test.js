@@ -1,4 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
+import '../nodes/specs'; // register migrated node specs with the lineage engine (mirrors src/index.jsx)
 import { useLineageState } from './useLineageState';
 
 // Pins the broken-column / auto-heal / companion behavior that Phase 6 will

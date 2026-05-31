@@ -1,3 +1,8 @@
+// Register migrated node specs so the engine dispatches through them — mirrors
+// production (src/index.jsx imports the specs barrel). Migrated types resolve via
+// their spec, the rest via the remaining switch; both must produce identical
+// results, which is exactly what this characterization suite pins.
+import '../nodes/specs';
 import {
   inferAggType,
   computeNodeOutputAttributes,

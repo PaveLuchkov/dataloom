@@ -5,9 +5,13 @@
 
 import { registerLineage } from './lineageRegistry';
 import dataframeSpec from './dataframe/spec';
+import filterSpec from './filter/spec';
+import concatSpec from './concat/spec';
 
 export const SPECS = {
   [dataframeSpec.type]: dataframeSpec,
+  [filterSpec.type]: filterSpec,
+  [concatSpec.type]: concatSpec,
 };
 
 for (const spec of Object.values(SPECS)) {

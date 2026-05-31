@@ -9,6 +9,8 @@ import filterSpec from './filter/spec';
 import concatSpec from './concat/spec';
 import renameSpec from './rename/spec';
 import transformSpec from './transform/spec';
+import mergeSpec from './merge/spec';
+import groupbySpec from './groupby/spec';
 
 export const SPECS = {
   [dataframeSpec.type]: dataframeSpec,
@@ -16,6 +18,8 @@ export const SPECS = {
   [concatSpec.type]: concatSpec,
   [renameSpec.type]: renameSpec,
   [transformSpec.type]: transformSpec,
+  [mergeSpec.type]: mergeSpec,
+  [groupbySpec.type]: groupbySpec,
 };
 
 for (const spec of Object.values(SPECS)) {

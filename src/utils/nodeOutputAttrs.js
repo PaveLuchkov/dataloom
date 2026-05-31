@@ -35,32 +35,6 @@ export function computeNodeOutputAttributes(node, edges, nodes) {
       return [...sourceAttrs.filter((a) => !ownNames.has(a.name)), ...ownOutputs];
     }
 
-    case 'groupByNode': {
-      const inputs = node.data.inputs || [];
-      const keys = (node.data.groupByInputIds || [])
-        .map((gid) => inputs.find((i) => i.id === gid))
-        .filter(Boolean)
-        .map((i) => ({ id: i.id, name: i.attrName, type: i.attrType || 'string' }));
-      const aggs = (node.data.aggregations || [])
-        .filter((a) => a.outputName)
-        .map((a) => {
-          const inp = inputs.find((i) => i.id === a.inputId);
-          return { id: a.id, name: a.outputName, type: inferAggType(a.func, inp?.attrType) };
-        });
-      return [...keys, ...aggs];
-    }
-
-    case 'mergeNode': {
-      const leftEdge  = edges.find((e) => e.target === node.id && e.targetHandle === 'left-in');
-      const rightEdge = edges.find((e) => e.target === node.id && e.targetHandle === 'right-in');
-      const leftNode  = leftEdge  ? nodes.find((n) => n.id === leftEdge.source)  : null;
-      const rightNode = rightEdge ? nodes.find((n) => n.id === rightEdge.source) : null;
-      const lAttrs = leftNode  ? computeNodeOutputAttributes(leftNode,  edges, nodes) : [];
-      const rAttrs = rightNode ? computeNodeOutputAttributes(rightNode, edges, nodes) : [];
-      const seen = new Set(lAttrs.map((a) => a.name));
-      return [...lAttrs, ...rAttrs.filter((a) => !seen.has(a.name))];
-    }
-
     default:
       return [];
   }
@@ -111,42 +85,6 @@ export function traceColumnUpstream(nodeId, colName, edges, nodes) {
         if (src) step.upstream = traceColumnUpstream(src.id, colName, edges, nodes);
       }
       return step;
-    }
-
-    case 'mergeNode': {
-      const leftEdge  = edges.find((e) => e.target === nodeId && e.targetHandle === 'left-in');
-      const rightEdge = edges.find((e) => e.target === nodeId && e.targetHandle === 'right-in');
-      const leftNode  = leftEdge  ? nodes.find((n) => n.id === leftEdge.source)  : null;
-      const rightNode = rightEdge ? nodes.find((n) => n.id === rightEdge.source) : null;
-      const step = { nodeId, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
-      if (leftNode && computeNodeOutputAttributes(leftNode, edges, nodes).some((a) => a.name === colName)) {
-        step.upstream = traceColumnUpstream(leftNode.id, colName, edges, nodes);
-        return step;
-      }
-      if (rightNode && computeNodeOutputAttributes(rightNode, edges, nodes).some((a) => a.name === colName)) {
-        step.upstream = traceColumnUpstream(rightNode.id, colName, edges, nodes);
-        return step;
-      }
-      return step;
-    }
-
-    case 'groupByNode': {
-      const inputs = node.data.inputs || [];
-      const groupByInputIds = node.data.groupByInputIds || [];
-      const keyInp = inputs.find((i) => groupByInputIds.includes(i.id) && i.attrName === colName);
-      if (keyInp) {
-        const step = { nodeId, colName, nodeType: node.type, nodeLabel: node.data.label, upstream: null };
-        step.upstream = traceColumnUpstream(keyInp.sourceNodeId, colName, edges, nodes);
-        return step;
-      }
-      const agg = (node.data.aggregations || []).find((a) => a.outputName === colName);
-      if (agg) {
-        const inp = inputs.find((i) => i.id === agg.inputId);
-        const step = { nodeId, colName, nodeType: node.type, nodeLabel: node.data.label, aggFunc: agg.func, inputColName: inp?.attrName, upstream: null };
-        if (inp) step.upstream = traceColumnUpstream(inp.sourceNodeId, inp.attrName, edges, nodes);
-        return step;
-      }
-      return null;
     }
 
     case 'functionNode': {
@@ -209,20 +147,6 @@ function _propagateCol(targetNode, colName, edges, nodes) {
   switch (targetNode.type) {
     case 'dataFrameNode':
       return (targetNode.data.attributes || []).some((a) => a.name === colName) ? colName : null;
-
-    case 'mergeNode':
-      return computeNodeOutputAttributes(targetNode, edges, nodes).some((a) => a.name === colName) ? colName : null;
-
-    case 'groupByNode': {
-      const inputs = targetNode.data.inputs || [];
-      const inp = inputs.find((i) => i.attrName === colName);
-      if (inp && (targetNode.data.groupByInputIds || []).includes(inp.id)) return colName;
-      const agg = (targetNode.data.aggregations || []).find((a) => {
-        const si = inputs.find((i) => i.id === a.inputId);
-        return si?.attrName === colName;
-      });
-      return agg?.outputName || null;
-    }
 
     case 'functionNode':
       return computeNodeOutputAttributes(targetNode, edges, nodes).some((a) => a.name === colName) ? colName : null;
